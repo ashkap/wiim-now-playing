@@ -74,6 +74,9 @@ WNP.Init = function () {
         WNP.s.rndAlbumArtUri = WNP.rndAlbumArt("fake-album-");
     }, 3 * 60 * 1000);
 
+    // Start the clock (only renders if a #wnpClock element is present, i.e. TV mode).
+    this.startClock();
+
 };
 
 /**
@@ -405,6 +408,10 @@ WNP.setSocketDefinitions = function () {
     socket.on("state", function (msg) {
         if (!msg) { return false; }
 
+        // Idle/stopped detection for kiosk (TV) mode: show a minimal idle state
+        // (large centred clock, no stale track data) when nothing is playing.
+        WNP.setIdle(msg.CurrentTransportState === "STOPPED" || msg.CurrentTransportState === "NO_MEDIA_PRESENT");
+
         // Get player progress data from the state message.
         var timeStampDiffMs = 0;
         var timeStampDiff = 0;
@@ -514,29 +521,32 @@ WNP.setSocketDefinitions = function () {
         var songBitrate = (msg.trackMetaData && msg.trackMetaData["song:bitrate"]) ? msg.trackMetaData["song:bitrate"] : "";
         var songBitDepth = (msg.trackMetaData && msg.trackMetaData["song:format_s"]) ? msg.trackMetaData["song:format_s"] : "";
         var songSampleRate = (msg.trackMetaData && msg.trackMetaData["song:rate_hz"]) ? msg.trackMetaData["song:rate_hz"] : "";
-        WNP.r.mediaBitRate.innerText = (songBitrate > 0) ? ((songBitrate > 1000) ? (songBitrate / 1000).toFixed(2) + " mbps, " : songBitrate + " kbps, ") : "";
-        WNP.r.mediaBitDepth.innerText = (songBitDepth > 0) ? ((songBitDepth > 24) ? "24 bit/" : songBitDepth + " bit/") : "";
+        WNP.r.mediaBitRate.innerText = (songBitrate > 0) ? ((songBitrate > 1000) ? (songBitrate / 1000).toFixed(2) + " mbps" : songBitrate + " kbps") : "";
+        WNP.r.mediaBitDepth.innerText = (songBitDepth > 0) ? ((songBitDepth > 24) ? "24 bit" : songBitDepth + " bit") : "";
         WNP.r.mediaSampleRate.innerText = (songSampleRate > 0) ? (songSampleRate / 1000).toFixed(1) + " kHz" : "";
-        if (!songBitrate && !songBitDepth && !songSampleRate) {
-            WNP.r.mediaQualityIdent.style.display = "none";
-        }
-        else {
-            WNP.r.mediaQualityIdent.style.display = "inline-block";
+        // Hide the whole quality pill when there is no audio quality info at all,
+        // so the kiosk doesn't render an empty pill (e.g. for some radio streams).
+        var mediaQualityEl = document.getElementById("mediaQuality");
+        if (mediaQualityEl) {
+            mediaQualityEl.style.display = (!songBitrate && !songBitDepth && !songSampleRate) ? "none" : "";
         }
 
         // Audio quality ident badge (HD/Hi-res/CD/...)
         var songQuality = (msg.trackMetaData && msg.trackMetaData["song:quality"]) ? msg.trackMetaData["song:quality"] : "";
         var songActualQuality = (msg.trackMetaData && msg.trackMetaData["song:actualQuality"]) ? msg.trackMetaData["song:actualQuality"] : "";
         var qualiIdent = WNP.getQualityIdent(songQuality, songActualQuality, songBitrate, songBitDepth, songSampleRate);
+        // Show the quality label only when there is one; otherwise hide it (via
+        // an inline display, which beats CSS) so it doesn't occupy a slot and
+        // leave a gap in the evenly-spaced quality row.
         if (qualiIdent !== "") {
             WNP.r.mediaQualityIdent.innerText = qualiIdent;
             WNP.r.mediaQualityIdent.title = "Quality: " + songQuality + ", " + songActualQuality;
+            WNP.r.mediaQualityIdent.style.display = "";
         }
         else {
-            var identId = document.createElement("i");
-            identId.className = "bi bi-soundwave text-secondary";
-            identId.title = "Quality: " + songQuality + ", " + songActualQuality;
-            WNP.r.mediaQualityIdent.innerHTML = identId.outerHTML;
+            WNP.r.mediaQualityIdent.innerText = "";
+            WNP.r.mediaQualityIdent.title = "Quality: " + songQuality + ", " + songActualQuality;
+            WNP.r.mediaQualityIdent.style.display = "none";
         }
 
         // Pre-process Album Art uri, if any is available from the metadata.
@@ -1070,6 +1080,44 @@ WNP.setAlbumArt = function (imgUri) {
     console.log("WNP", "Set Album Art", imgUri);
     this.r.albumArt.src = imgUri;
     this.r.bgAlbumArtBlur.style.backgroundImage = "url('" + imgUri + "')";
+};
+
+/**
+ * Start the clock. Renders the current time as HH:MM (24h) into #wnpClock and
+ * updates it once per minute, aligned to the minute boundary. No-op if there is
+ * no clock element on the page (i.e. only present in TV/kiosk mode).
+ * @returns {undefined}
+ */
+WNP.startClock = function () {
+    var clockEl = document.getElementById("wnpClock");
+    if (!clockEl) { return; }
+
+    function tick() {
+        var now = new Date();
+        var hh = String(now.getHours()).padStart(2, "0");
+        var mm = String(now.getMinutes()).padStart(2, "0");
+        clockEl.textContent = hh + ":" + mm;
+    }
+
+    tick(); // Render immediately...
+    // ...then align subsequent updates to the start of each minute.
+    var msToNextMinute = (60 - new Date().getSeconds()) * 1000;
+    setTimeout(function () {
+        tick();
+        setInterval(tick, 60 * 1000);
+    }, msToNextMinute);
+};
+
+/**
+ * Toggle the minimal idle state (TV/kiosk mode). When idle, CSS hides stale
+ * track data and enlarges/centres the clock. No visual effect outside TV mode.
+ * @param {boolean} isIdle - Whether the device is idle/stopped.
+ * @returns {undefined}
+ */
+WNP.setIdle = function (isIdle) {
+    var appEl = document.getElementById("wnpApp");
+    if (!appEl) { return; }
+    appEl.classList.toggle("is-idle", !!isIdle);
 };
 
 /**

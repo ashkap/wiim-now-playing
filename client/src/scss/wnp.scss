@@ -159,6 +159,21 @@
                 margin-right: 10px;
             }
 
+            // No label for this track: remove it from the layout entirely so
+            // it doesn't leave a gap in the evenly-spaced quality row.
+            &:empty {
+                display: none;
+            }
+
+        }
+
+        // Lay out the quality parts with an even gap (separators are no
+        // longer baked into the text). Single selector, so it can't be
+        // clobbered by the more specific TV-mode rules below.
+        #mediaQuality {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 0.6ch;
         }
 
         // Lyrics
@@ -476,126 +491,329 @@
 
     }
 
-    // In case of TV mode activated
-    // Hides player controls, more focus on song and artwork
+    // ===============================================================
+    // TV / Kiosk mode
+    // Full-width layout for a 1080p landscape monitor viewed from across
+    // a room (Raspberry Pi kiosk). Square, edge-to-edge album art on the
+    // left; a clean information column on the right. Player controls are
+    // hidden; the settings gear is preserved.
     &.tv-mode {
 
-        /* Layout - CSS Grid */
-        // Mobile portrait mode as default
+        position: relative;
+
+        // Unobtrusive clock, top-left corner over the artwork.
+        #wnpClock {
+            position: absolute;
+            top: 20px;
+            left: 26px;
+            z-index: 5;
+            font-size: 1.75rem;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            color: rgba(255, 255, 255, 0.78);
+            text-shadow: 2px 2px 10px rgba(0, 0, 0, 0.9);
+            font-variant-numeric: tabular-nums;
+            transition: font-size 0.4s ease, top 0.4s ease, left 0.4s ease, transform 0.4s ease;
+        }
+
+        // Current device volume, unobtrusive in the top-right corner
+        // (below the settings gear). Text only, no icon.
+        #devVolumeHolder {
+            position: absolute;
+            top: 62px;
+            right: 26px;
+            bottom: auto;
+            z-index: 5;
+            display: block;
+            font-size: clamp(2rem, 2.4vw, 2.5rem);
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            color: rgba(255, 255, 255, 0.82);
+            text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.85);
+            font-variant-numeric: tabular-nums;
+
+            i {
+                display: none; // no decorative icon; use a text label instead
+            }
+
+            #devVol::before {
+                content: "VOL ";
+            }
+        }
+
+        /* Portrait / small fallback keeps the stacked mobile grid,
+           but hides player controls like the original TV mode. */
         .wnpContainer {
             grid-template-rows: 1.4fr .6fr 56px;
         }
 
-        // Small devices (landscape phones, 576px and up)
-        @media (min-width: 576px) and (orientation: landscape) {
+        // ----------------------------------------------------------
+        // Landscape kiosk layout
+        @media (orientation: landscape) {
 
             .wnpContainer {
-                grid-template-columns: .75fr 1.25fr;
-                grid-template-rows: 1fr 46px;
+                // Square art (full viewport height) + information column.
+                // Capped at 60vw so the art never eats the whole screen.
+                grid-template-columns: min(100vh, 60vw) 1fr;
+                grid-template-rows: 1fr auto;
                 grid-template-areas:
                     "wnpAlbumArt wnpMediaInfo"
-                    "wnpFooter wnpFooter";
+                    "wnpAlbumArt wnpFooter";
+                gap: 0;
             }
 
-        }
+            // --- Album art: edge-to-edge, square, full height ---
+            .wnpAlbumArt {
+                grid-area: wnpAlbumArt;
+                padding: 0;
 
-        // Medium devices (tablets, 768px and up)
-        @media (min-width: 768px) and (orientation: landscape) {
+                >div {
+                    width: 100%;
+                    height: 100%;
+                    max-width: none;
+                    max-height: none;
+                    border-radius: 0;
+                    box-shadow: none;
+                }
 
-            .wnpContainer {
-                grid-template-columns: 1.05fr .95fr;
-                // grid-template-rows: 1fr 105px;
+                #albumArt {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    border-radius: 0 !important;
+                    box-shadow: none;
+                }
             }
 
-            /* Media info contents */
+            // --- Information column ---
             .wnpMediaInfo {
+                grid-area: wnpMediaInfo;
+                display: flex;
+                flex-direction: column;
+                padding: 4.5vh 3vw 1vh 3vw;
+                min-width: 0; // allow ellipsis inside flex children
+                overflow: hidden;
 
-                // Lyrics
+                h2,
+                h3 {
+                    margin-bottom: 0;
+                }
+
+                // Source ident (small, subtle, left aligned)
+                #mediaSource {
+                    flex: 0 0 auto;
+                    text-align: left;
+                    margin-bottom: 1.4vh;
+                    min-height: 30px;
+
+                    img {
+                        max-height: 30px;
+                        margin-bottom: 0;
+                    }
+                }
+
+                // Track title: very large, wrapping to two lines max, ellipsis
+                #mediaTitle {
+                    flex: 0 0 auto;
+                    font-size: clamp(2.4rem, 4.2vw, 4.4rem);
+                    font-weight: 800;
+                    line-height: 1.04;
+                    letter-spacing: -0.01em;
+                    margin-bottom: 1.6vh;
+                    display: -webkit-box;
+                    -webkit-line-clamp: 2;
+                    -webkit-box-orient: vertical;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                // Artist: clearly smaller hierarchy, single line
+                #mediaArtist {
+                    flex: 0 0 auto;
+                    font-size: clamp(1.4rem, 2vw, 2.2rem);
+                    font-weight: 500;
+                    letter-spacing: 0.03em;
+                    color: rgba(255, 255, 255, 0.92);
+                    margin-bottom: 0.5vh;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                // Album: smaller still, generous letter-spacing
+                div:has(>#mediaAlbum) {
+                    flex: 0 0 auto;
+                    font-size: clamp(1rem, 1.4vw, 1.55rem);
+                    letter-spacing: 0.08em;
+                    color: rgba(179, 189, 186, 1);
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    margin-bottom: 0.4vh !important;
+                }
+
+                // Subtitle: subtle secondary line
+                div:has(>#mediaSubTitle) {
+                    flex: 0 0 auto;
+                    font-size: clamp(0.9rem, 1.1vw, 1.2rem);
+                    letter-spacing: 0.08em;
+                    margin-bottom: 0 !important;
+                }
+
+                // --- Lyrics panel: fills the remaining vertical space ---
                 #mediaLyrics {
+                    display: flex;
+                    flex: 1 1 auto;
+                    flex-direction: column;
+                    justify-content: center;
+                    gap: 0.7vh;
+                    margin: 1.6vh 0;
+                    padding: 2vh 1.6vw;
+                    border-radius: 18px;
+                    background: rgba(0, 0, 0, 0.22);
+                    overflow: hidden;
 
-                    >div:first-child {
-                        display: none;
+                    // No synced lyrics: keep the space, drop the panel styling.
+                    &:not(.is-visible) {
+                        background: transparent;
                     }
 
                     >div {
                         display: block;
+                        text-align: left;
+                        font-style: normal;
+                        opacity: 0.4;
+                        font-size: clamp(1.15rem, 1.7vw, 2rem);
+                        line-height: 1.25;
+                        letter-spacing: 0.01em;
+                        white-space: normal;
+                        overflow-wrap: break-word;
+                        transition: opacity 0.25s ease, color 0.25s ease, font-size 0.25s ease;
+
+                        &:empty::before {
+                            content: "";
+                        }
+
+                        &.current {
+                            opacity: 1;
+                            color: #fff;
+                            font-weight: 700;
+                            font-size: clamp(1.55rem, 2.4vw, 2.9rem);
+                        }
+                    }
+
+                    &.is-pending .current {
+                        opacity: 0.7;
+                    }
+                }
+
+                // --- Audio quality bar: parts evenly spread across the column,
+                //     uniform size, large enough to read from across the room ---
+                #mediaQuality {
+                    flex: 0 0 auto;
+                    align-self: stretch; // span the full width of the info column
+                    display: flex;
+                    align-items: baseline;
+                    justify-content: space-between; // even spacing across the width
+                    gap: 0.7ch;
+                    margin: 0;
+                    padding: 0.5em 1.15em;
+                    border-radius: 999px;
+                    background: rgba(255, 255, 255, 0.10);
+                    border: 1px solid rgba(255, 255, 255, 0.22);
+                    color: #fff !important;
+                    // Sized so the widest case (format label + 3 values, e.g.
+                    // "LOSSLESS 700 KBPS 24 BIT 44.1 KHZ") fits the column width.
+                    font-size: clamp(1.05rem, 1.4vw, 1.55rem);
+                    font-weight: 600;
+                    letter-spacing: 0.03em;
+                    text-transform: uppercase;
+                    white-space: nowrap;
+                    overflow: hidden; // safety net: never spill past the pill edge
+
+                    // Even size (override Bootstrap's .badge 0.75em so it matches)
+                    #mediaQualityIdent.badge-outlined {
+                        border: none;
+                        padding: 0;
+                        margin: 0;
+                        font-size: 1em;
+                        font-weight: 700;
+                        color: #fff !important;
+                    }
+
+                    // No decorative icons on the kiosk (soundwave fallback glyph)
+                    i {
+                        display: none;
+                    }
+
+                    // Value parts inherit the pill's colour/size (kept uniform);
+                    // no per-span rules here to avoid selector-scope leakage.
+
+                    // Drop empty parts so the remaining ones stay evenly spread.
+                    #mediaBitRate:empty,
+                    #mediaBitDepth:empty,
+                    #mediaSampleRate:empty {
+                        display: none;
                     }
                 }
             }
 
-        }
+            // --- Footer: thick progress bar at the bottom of the info column ---
+            .wnpFooter {
+                grid-area: wnpFooter;
+                padding: 0 3vw 3vh 3vw;
 
-        // Large devices (desktops/tablets, 992px and up)
-        @media (min-width: 992px) and (orientation: landscape) {
+                #progressPercent {
+                    height: 10px;
+                    border-radius: 999px;
+                    overflow: hidden;
+                    --bs-bg-opacity: .28;
+                }
 
-            /* Media info contents */
-            .wnpMediaInfo {
+                #progressPlayed,
+                #progressLeft {
+                    padding-top: 10px;
 
-                // Lyrics
-                #mediaLyrics {
-
-                    >div:first-child {
-                        display: block;
+                    small {
+                        font-size: clamp(1rem, 1.2vw, 1.45rem);
+                        letter-spacing: 0.05em;
+                        font-variant-numeric: tabular-nums;
                     }
-
                 }
             }
-
         }
 
-        /* Media info TV mode */
-        .wnpMediaInfo {
-
-            h1,
-            h2,
-            h3,
-            h4,
-            h5,
-            h6 {
-                margin-bottom: 0.75rem;
-            }
-
-            // Media Source Ident
-            #mediaSource {
-                text-align: left;
-            }
-
-        }
-
-        /* Footer TV mode */
+        // --- Hide player controls & device chrome in all TV-mode sizes ---
         .wnpFooter {
 
-            // Emphasize progress bar
-            #progressPercent {
-                height: 5px;
-            }
-
-            // Hide player controls
             .btn-group.primary,
-            #devNameHolder,
-            #devVolumeHolder {
+            #devNameHolder {
                 display: none;
             }
+        }
 
+        // ----------------------------------------------------------
+        // Idle / stopped state: large centred clock, no stale track data.
+        &.is-idle {
+
+            .wnpAlbumArt,
+            .wnpMediaInfo,
+            #devVolumeHolder,
+            #progressPercent,
             #progressPlayed,
             #progressLeft {
-                padding-top: 5px;
+                visibility: hidden;
             }
 
-            #mediaQuality {
-                padding-top: 3px;
+            #wnpClock {
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                font-size: clamp(6rem, 17vw, 15rem);
+                font-weight: 300;
+                letter-spacing: 0.02em;
+                color: rgba(255, 255, 255, 0.92);
             }
-
-            #mediaQualityIdent {
-
-                &.badge-outlined {
-                    border: 1px solid rgba(118, 125, 123, 1);
-                    font-weight: var(--bs-body-font-weight);
-                    margin-right: 10px;
-                }
-
-            }
-
         }
     }
 
