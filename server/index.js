@@ -167,6 +167,10 @@ app.get("/proxy-art", limiter, function (req, res) {
 
     const options = {
         rejectUnauthorized: false, // Ignore self-signed certificate
+        family: 4, // Force IPv4. Art CDNs (e.g. Spotify's i.scdn.co) advertise
+        // IPv6 (AAAA) addresses, but many home networks/devices have no working
+        // IPv6 route to the internet, so IPv6 connection attempts fast-fail and
+        // album art intermittently falls back to the generic image.
     };
     let identified = false;
 
