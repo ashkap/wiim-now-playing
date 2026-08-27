@@ -237,15 +237,38 @@ app.get("/proxy-art", limiter, function (req, res) {
 
         // Handle errors in the response stream
         resp.on('error', (e) => {
-            if (!res.writableEnded) res.status(502).send("<div>Gateway Error</div>");
+            if (res.headersSent) {
+                res.destroy(); // Already streaming; just tear down the client connection.
+            } else if (!res.writableEnded) {
+                res.status(502).send("<div>Gateway Error</div>");
+            }
         });
 
     })
 
+    // Abort the upstream fetch if the client disconnects before we finish.
+    // The browser swaps the album-art <img> on every track change, which would
+    // otherwise leave the connection to the art CDN (e.g. Spotify's i.scdn.co)
+    // open. Over time these orphaned sockets accumulate until the process can no
+    // longer make new outbound requests, at which point album art silently fails
+    // for every track until the server is restarted.
+    res.on('close', () => {
+        if (!res.writableFinished) request.destroy();
+    });
+
+    // Don't let a hung upstream connection linger forever; free it after a while.
+    request.setTimeout(8000, () => {
+        request.destroy(new Error("Album art proxy timeout"));
+    });
+
     // Handle errors in the request to the target URL
     request.on('error', function (e) {
         // console.error("Error fetching album art:", e);
-        if (!res.writableEnded) res.status(404).send("<div>404 Not Found</div>");
+        if (res.headersSent) {
+            res.destroy(); // Headers already sent; can't send a status, just tear down.
+        } else if (!res.writableEnded) {
+            res.status(404).send("<div>404 Not Found</div>");
+        }
     });
 
 });

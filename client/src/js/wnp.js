@@ -30,7 +30,9 @@ WNP.d = {
     lyricsLastRelTime: null, // Last known RelTime, used for lyrics timing
     lyricsLastTimeStampDiffMs: null, // Last known timestamp difference in ms, used for lyrics timing
     lyricsIndex: null, // Current lyrics line index
-    alertTimeout: null // Alert timeout, used for storing the timeout for the alerts
+    alertTimeout: null, // Alert timeout, used for storing the timeout for the alerts
+    albumArtTarget: null, // Desired album art URI, used to retry on load errors
+    albumArtRetries: 0 // Album art load-error retry counter
 };
 
 // Reference placeholders.
@@ -1078,8 +1080,48 @@ WNP.checkAlbumArtURI = function (sAlbumArtUri, nTimestamp) {
  */
 WNP.setAlbumArt = function (imgUri) {
     console.log("WNP", "Set Album Art", imgUri);
+    WNP.d.albumArtTarget = imgUri; // Remember the desired art, for retry-on-error
+    WNP.d.albumArtRetries = 0;
     this.r.albumArt.src = imgUri;
     this.r.bgAlbumArtBlur.style.backgroundImage = "url('" + imgUri + "')";
+};
+
+/**
+ * Handle album art load failures. Remote (proxied) art can fail on a transient
+ * network/proxy hiccup; rather than dropping to the generic fallback for the
+ * rest of the track, retry a few times with a cache-buster, then fall back.
+ * @returns {undefined}
+ */
+WNP.onAlbumArtError = function () {
+    var target = WNP.d.albumArtTarget;
+    var fallback = WNP.s.rndAlbumArtUri;
+
+    // No real target, or already showing local art: ensure the fallback is up.
+    if (!target || target === fallback || target.indexOf("img/") !== -1) {
+        if (WNP.r.albumArt.getAttribute("src") !== fallback) {
+            WNP.r.albumArt.src = fallback;
+            WNP.r.bgAlbumArtBlur.style.backgroundImage = "url('" + fallback + "')";
+        }
+        return;
+    }
+
+    // Retry the real art a few times before giving up on it for this track.
+    if (WNP.d.albumArtRetries < 3) {
+        WNP.d.albumArtRetries++;
+        var sep = (target.indexOf("?") === -1) ? "?" : "&";
+        var retryUri = target + sep + "retry=" + WNP.d.albumArtRetries + "_" + Date.now();
+        setTimeout(function () {
+            // Only retry if the desired art hasn't changed since (e.g. new track).
+            if (WNP.d.albumArtTarget === target) {
+                WNP.r.albumArt.src = retryUri;
+                WNP.r.bgAlbumArtBlur.style.backgroundImage = "url('" + retryUri + "')";
+            }
+        }, 700 * WNP.d.albumArtRetries);
+    } else {
+        WNP.d.albumArtTarget = fallback; // Give up; treat further errors as local.
+        WNP.r.albumArt.src = fallback;
+        WNP.r.bgAlbumArtBlur.style.backgroundImage = "url('" + fallback + "')";
+    }
 };
 
 /**
