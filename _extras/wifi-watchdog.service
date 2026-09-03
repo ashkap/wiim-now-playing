@@ -1,0 +1,16 @@
+[Unit]
+Description=WiFi watchdog for WiiM Now Playing kiosk
+Wants=network.target
+After=network.target
+
+[Service]
+Type=simple
+# Runs as root so it can restart WiFi and reboot without sudo.
+ExecStart=/home/sysadmin/wifi-watchdog.sh
+Restart=always
+RestartSec=15
+# Thresholds can be tuned here without editing the script, e.g.:
+# Environment=CHECK_SECS=30 FAILS_TO_RESTART=4 FAILS_TO_REBOOT=12
+
+[Install]
+WantedBy=multi-user.target
