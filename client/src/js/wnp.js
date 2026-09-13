@@ -10,6 +10,9 @@ WNP.s = {
     locHostname: location.hostname,
     locPort: (location.port && location.port != "80" && location.port != "1234") ? location.port : "80",
     rndAlbumArtUri: "./img/fake-album-1.jpg",
+    // Shown full-screen when the device input is Line In (e.g. a turntable),
+    // which provides no track metadata or artwork of its own.
+    lineInArtUri: "./img/linein-turntable.jpg",
     // Device selection
     aDeviceUI: ["btnPrev", "btnPlay", "btnNext", "btnRefresh", "selDeviceChoices", "devName", "devNameHolder", "mediaTitle", "mediaSubTitle", "mediaArtist", "mediaAlbum", "mediaBitRate", "mediaBitDepth", "mediaSampleRate", "mediaQualityIdent", "devVol", "btnRepeat", "btnShuffle", "progressPlayed", "progressLeft", "progressPercent", "mediaSource", "albumArt", "bgAlbumArtBlur", "btnDevSelect", "oDeviceList", "btnDevPreset", "oPresetList", "btnDevVolume", "rVolume", "mediaLyrics", "lyricPrev", "lyricCurrent", "lyricNext", "lyricAfter", "alerts"],
     // Server actions to be used in the app
@@ -495,6 +498,12 @@ WNP.setSocketDefinitions = function () {
         var playMedium = (msg.PlayMedium) ? msg.PlayMedium : "";
         var trackSource = (msg.TrackSource) ? msg.TrackSource : "";
         var sourceIdent = WNP.getSourceIdent(playMedium, trackSource);
+
+        // Line In (e.g. a turntable) carries no metadata at all, so instead of
+        // falling back to random placeholder artwork, show a dedicated
+        // full-screen photo. See the .is-linein styling.
+        var isLineIn = (playMedium.toLowerCase() === "line-in");
+        WNP.setLineIn(isLineIn);
         // Did the source ident change...?
         if (sourceIdent !== WNP.d.prevSourceIdent) {
             if (sourceIdent !== "") {
@@ -553,7 +562,9 @@ WNP.setSocketDefinitions = function () {
 
         // Pre-process Album Art uri, if any is available from the metadata.
         var albumArtUriRaw = (msg.trackMetaData && msg.trackMetaData["upnp:albumArtURI"]) ? (Array.isArray(msg.trackMetaData["upnp:albumArtURI"]) ? msg.trackMetaData["upnp:albumArtURI"][0] : msg.trackMetaData["upnp:albumArtURI"]) : "";
-        var albumArtUri = WNP.checkAlbumArtURI(albumArtUriRaw, msg.metadataTimeStamp);
+        var albumArtUri = isLineIn
+            ? WNP.s.lineInArtUri
+            : WNP.checkAlbumArtURI(albumArtUriRaw, msg.metadataTimeStamp);
 
         // Set Album Art, only if the track changed and the URI changed
         var trackChanged = false;
@@ -1160,6 +1171,19 @@ WNP.setIdle = function (isIdle) {
     var appEl = document.getElementById("wnpApp");
     if (!appEl) { return; }
     appEl.classList.toggle("is-idle", !!isIdle);
+};
+
+/**
+ * Toggle the Line In presentation (TV/kiosk mode). When on, CSS shows the
+ * turntable photo full-screen and hides the metadata-driven furniture, since
+ * an analogue input provides no title, artist, artwork or duration.
+ * @param {boolean} isLineIn - Whether the device input is Line In.
+ * @returns {undefined}
+ */
+WNP.setLineIn = function (isLineIn) {
+    var appEl = document.getElementById("wnpApp");
+    if (!appEl) { return; }
+    appEl.classList.toggle("is-linein", !!isLineIn);
 };
 
 /**

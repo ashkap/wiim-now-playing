@@ -793,6 +793,47 @@
         }
 
         // ----------------------------------------------------------
+        // Line In (e.g. a turntable): an analogue input carries no title,
+        // artist, artwork or duration, so show the photo full-screen with only
+        // the clock, volume and quality pill floating over it.
+        &.is-linein {
+
+            // The background layer already holds the artwork image, so reuse it
+            // for the photo - just drop the blur and zoom so it renders crisp.
+            #bgAlbumArtBlur {
+                filter: none;
+                transform: none;
+            }
+
+            // Hide the artwork tile and everything metadata-driven. The info
+            // column goes wholesale; the quality pill is re-shown below.
+            .wnpAlbumArt,
+            .wnpMediaInfo,
+            #progressPercent,
+            #progressPlayed,
+            #progressLeft {
+                visibility: hidden;
+            }
+
+            // Keep the quality pill - it shows what the WiiM is sampling the
+            // analogue input at. Centre it at the bottom, on a darker ground so
+            // it stays legible over a bright photo.
+            #mediaQuality {
+                visibility: visible;
+                position: fixed;
+                left: 50%;
+                bottom: 4vh;
+                transform: translateX(-50%);
+                width: auto;
+                align-self: auto;
+                margin: 0;
+                gap: 2ch;
+                background: rgba(0, 0, 0, 0.5);
+                border-color: rgba(255, 255, 255, 0.28);
+            }
+        }
+
+        // ----------------------------------------------------------
         // Idle / stopped state: large centred clock, no stale track data.
         &.is-idle {
 
