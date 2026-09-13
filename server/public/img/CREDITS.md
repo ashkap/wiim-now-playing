@@ -2,12 +2,12 @@
 
 ## linein-turntable.jpg
 
-Shown full-screen when the WiiM input switches to Line In, which carries no
-track metadata or artwork of its own.
+Shown full-screen when the WiiM input switches to Line In.
 
-- **Source**: supplied by the repository owner
-- **Prepared for the kiosk**: converted from PNG to JPEG (quality 86) at its
-  native 1672x941 (16:9); the display scales it to fill 1920x1080
+- **Source**: [Technics Turntable SL1200GAE](https://commons.wikimedia.org/wiki/File:Technics_Turntable_SL1200GAE_(23849966484).jpg) on Wikimedia Commons
+- **Author**: Maurizio Pesce, from Milan, Italia
+- **Licence**: [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/)
+- **Changes**: cropped and resized to 1920x1080, re-encoded as JPEG for the kiosk display
 
-To swap it, drop any 16:9 image in at this same path, then rebuild the client
-(`npm run build` in `client/`) and redeploy. No code changes are needed.
+Attribution is required by CC BY 2.0 and this repository is public, so please
+keep this credit in place if the image is redistributed.
