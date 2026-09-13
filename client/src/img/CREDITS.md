@@ -11,3 +11,15 @@ Shown full-screen when the WiiM input switches to Line In.
 
 Attribution is required by CC BY 2.0 and this repository is public, so please
 keep this credit in place if the image is redistributed.
+
+## optical-cdplayer.jpg
+
+Shown full-screen when the WiiM input switches to Optical (a CD player).
+
+- **Subject**: Marantz CD-7
+- **Source**: supplied by the repository owner (manufacturer publicity photograph)
+- **Prepared for the kiosk**: centre-cropped from 1200x841 to 16:9 and
+  re-encoded as JPEG
+
+Note: this is a manufacturer press image rather than an openly-licensed one,
+unlike linein-turntable.jpg above.

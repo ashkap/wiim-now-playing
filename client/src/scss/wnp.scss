@@ -793,10 +793,10 @@
         }
 
         // ----------------------------------------------------------
-        // Line In (e.g. a turntable): an analogue input carries no title,
-        // artist, artwork or duration, so show the photo full-screen with only
-        // the clock, volume and quality pill floating over it.
-        &.is-linein {
+        // Line In / Optical (a turntable, a CD player): these inputs carry no
+        // title, artist, artwork or duration, so show a photo of the source
+        // gear full-screen with only the clock, volume and quality pill over it.
+        &.is-sourcephoto {
 
             // The background layer already holds the artwork image, so reuse it
             // for the photo - just drop the blur and zoom so it renders crisp.

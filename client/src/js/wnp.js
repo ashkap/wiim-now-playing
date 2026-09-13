@@ -10,9 +10,14 @@ WNP.s = {
     locHostname: location.hostname,
     locPort: (location.port && location.port != "80" && location.port != "1234") ? location.port : "80",
     rndAlbumArtUri: "./img/fake-album-1.jpg",
-    // Shown full-screen when the device input is Line In (e.g. a turntable),
-    // which provides no track metadata or artwork of its own.
-    lineInArtUri: "./img/linein-turntable.jpg",
+    // Inputs such as Line In and Optical carry no track metadata or artwork of
+    // their own, so show a photo of the source gear full-screen instead.
+    // Keyed by the device's PlayMedium, lower-cased.
+    sourcePhotos: {
+        "line-in": "./img/linein-turntable.jpg",
+        "optical": "./img/optical-cdplayer.jpg",
+        "spdif": "./img/optical-cdplayer.jpg"
+    },
     // Device selection
     aDeviceUI: ["btnPrev", "btnPlay", "btnNext", "btnRefresh", "selDeviceChoices", "devName", "devNameHolder", "mediaTitle", "mediaSubTitle", "mediaArtist", "mediaAlbum", "mediaBitRate", "mediaBitDepth", "mediaSampleRate", "mediaQualityIdent", "devVol", "btnRepeat", "btnShuffle", "progressPlayed", "progressLeft", "progressPercent", "mediaSource", "albumArt", "bgAlbumArtBlur", "btnDevSelect", "oDeviceList", "btnDevPreset", "oPresetList", "btnDevVolume", "rVolume", "mediaLyrics", "lyricPrev", "lyricCurrent", "lyricNext", "lyricAfter", "alerts"],
     // Server actions to be used in the app
@@ -499,11 +504,11 @@ WNP.setSocketDefinitions = function () {
         var trackSource = (msg.TrackSource) ? msg.TrackSource : "";
         var sourceIdent = WNP.getSourceIdent(playMedium, trackSource);
 
-        // Line In (e.g. a turntable) carries no metadata at all, so instead of
-        // falling back to random placeholder artwork, show a dedicated
-        // full-screen photo. See the .is-linein styling.
-        var isLineIn = (playMedium.toLowerCase() === "line-in");
-        WNP.setLineIn(isLineIn);
+        // Inputs like Line In and Optical carry no metadata at all, so instead
+        // of falling back to random placeholder artwork, show a photo of the
+        // source gear full-screen. See the .is-sourcephoto styling.
+        var sourcePhoto = WNP.s.sourcePhotos[playMedium.toLowerCase()] || "";
+        WNP.setSourcePhoto(sourcePhoto !== "");
         // Did the source ident change...?
         if (sourceIdent !== WNP.d.prevSourceIdent) {
             if (sourceIdent !== "") {
@@ -562,8 +567,8 @@ WNP.setSocketDefinitions = function () {
 
         // Pre-process Album Art uri, if any is available from the metadata.
         var albumArtUriRaw = (msg.trackMetaData && msg.trackMetaData["upnp:albumArtURI"]) ? (Array.isArray(msg.trackMetaData["upnp:albumArtURI"]) ? msg.trackMetaData["upnp:albumArtURI"][0] : msg.trackMetaData["upnp:albumArtURI"]) : "";
-        var albumArtUri = isLineIn
-            ? WNP.s.lineInArtUri
+        var albumArtUri = sourcePhoto
+            ? sourcePhoto
             : WNP.checkAlbumArtURI(albumArtUriRaw, msg.metadataTimeStamp);
 
         // Set Album Art, only if the track changed and the URI changed
@@ -1174,16 +1179,16 @@ WNP.setIdle = function (isIdle) {
 };
 
 /**
- * Toggle the Line In presentation (TV/kiosk mode). When on, CSS shows the
- * turntable photo full-screen and hides the metadata-driven furniture, since
- * an analogue input provides no title, artist, artwork or duration.
- * @param {boolean} isLineIn - Whether the device input is Line In.
+ * Toggle the source-photo presentation (TV/kiosk mode). When on, CSS shows the
+ * photo of the source gear full-screen and hides the metadata-driven furniture,
+ * since these inputs provide no title, artist, artwork or duration.
+ * @param {boolean} hasPhoto - Whether the current input has a source photo.
  * @returns {undefined}
  */
-WNP.setLineIn = function (isLineIn) {
+WNP.setSourcePhoto = function (hasPhoto) {
     var appEl = document.getElementById("wnpApp");
     if (!appEl) { return; }
-    appEl.classList.toggle("is-linein", !!isLineIn);
+    appEl.classList.toggle("is-sourcephoto", !!hasPhoto);
 };
 
 /**
