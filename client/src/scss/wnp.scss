@@ -800,7 +800,8 @@
 
             // The background layer already holds the artwork image, so reuse it
             // for the photo - just drop the blur and zoom so it renders crisp.
-            #bgAlbumArtBlur {
+            // Nested under #wnpBgAlbumArt to out-specify the base blur rule.
+            #wnpBgAlbumArt #bgAlbumArtBlur {
                 filter: none;
                 transform: none;
             }
