@@ -991,6 +991,11 @@
 
                     .wnpMediaInfo {
 
+                        // Reserve the bottom corners for the source logo and
+                        // the quality column, so the title and artist rise
+                        // clear of them when they flash in on a track change.
+                        padding-bottom: 5.4vh;
+
                         div:has(>#mediaAlbum) {
                             display: none;
                         }
