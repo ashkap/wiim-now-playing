@@ -821,7 +821,11 @@
                 width: 100%;
                 height: 100%;
                 transform: scale(1.35);
-                filter: blur(56px) saturate(1.5) brightness(0.72);
+                // The image behind this is a 32px thumbnail stretched to full screen,
+                // so it is already a soft wash of colour. This small radius only
+                // smooths the interpolation, and stays in the range the Pi's GPU
+                // paints reliably - the same range the tv-mode backdrop uses.
+                filter: blur(14px) saturate(1.5) brightness(0.72);
             }
 
             @media (orientation: landscape) {

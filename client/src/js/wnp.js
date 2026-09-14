@@ -1190,9 +1190,36 @@ WNP.setAlbumArt = function (imgUri) {
 WNP.syncBackdrop = function () {
     if (!WNP.r.albumArt || !WNP.r.bgAlbumArtBlur) { return; }
     var src = WNP.r.albumArt.currentSrc || WNP.r.albumArt.src;
-    if (src) {
-        WNP.r.bgAlbumArtBlur.style.backgroundImage = "url('" + src + "')";
+    if (!src) { return; }
+
+    // Blur the artwork into a small canvas and use that as the backdrop, rather
+    // than asking CSS to blur a full-screen layer. The Pi 3B cannot paint a
+    // large-radius CSS blur over a layer that size - the filtered layer is
+    // dropped outright and the screen edges fall back to the app's base
+    // gradient - but a canvas blur is cheap because it runs at thumbnail scale,
+    // and stretching the result back up to full screen keeps it smooth.
+    var thumb = null;
+    try {
+        var size = 128;
+        var canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        var ctx = canvas.getContext("2d");
+
+        // Draw oversized and off-origin so the blur's own fade to transparent
+        // falls outside the canvas; otherwise the backdrop would be see-through
+        // at exactly the edges it exists to cover.
+        var bleed = Math.round(size * 0.25);
+        if ("filter" in ctx) {
+            ctx.filter = "blur(" + Math.round(size / 16) + "px)";
+        }
+        ctx.drawImage(WNP.r.albumArt, -bleed, -bleed, size + bleed * 2, size + bleed * 2);
+        thumb = canvas.toDataURL("image/jpeg", 0.85);
+    } catch (err) {
+        thumb = null; // Tainted canvas or no 2d context; use the full image.
     }
+
+    WNP.r.bgAlbumArtBlur.style.backgroundImage = "url('" + (thumb || src) + "')";
 };
 
 /**
