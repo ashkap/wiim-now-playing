@@ -74,6 +74,9 @@ let serverSettings = { // Placeholder for current server settings
         "lyrics": {
             "enabled": false, // Whether the lyrics feature is enabled or not
             "offsetMs": 0 // The offset in milliseconds to apply to the synced lyrics, can be positive or negative, default is 0.
+        },
+        "display": {
+            "artFit": "full" // Art mode (/art) fit: "full" shows the whole cover, "crop" fills the screen
         }
     },
     "server": null, // Placeholder for the express server (port) information
@@ -136,6 +139,9 @@ app.use(express.static(__dirname + "/public"));
 // Exceptions:
 app.get("/tv", limiter, function (req, res) { // TV Mode
     res.sendFile(__dirname + "/public/tv.html");
+});
+app.get("/art", limiter, function (req, res) { // Art Mode
+    res.sendFile(__dirname + "/public/art.html");
 });
 app.get("/debug", limiter, function (req, res) { // Debug page
     res.sendFile(__dirname + "/public/debug.html");
@@ -451,6 +457,29 @@ io.on("connection", (socket) => {
             if (shouldRefreshLyrics) {
                 lyrics.getLyricsForMetadata(io, deviceInfo, serverSettings);
             }
+
+        }
+    });
+
+    /**
+     * Listener for display settings updates.
+     * Sets the display related settings, saves them and broadcasts to all
+     * clients so every screen switches together.
+     * @param {object} msg - The updated settings.
+     * @returns {undefined}
+     */
+    socket.on("display-settings", (msg) => {
+        log("Socket event", "display-settings", msg);
+        if (msg && msg.features && msg.features.display) {
+
+            // Art mode fit: "full" or "crop"
+            if (msg.features.display.artFit === "full" || msg.features.display.artFit === "crop") {
+                serverSettings.features.display.artFit = msg.features.display.artFit;
+            }
+
+            // Save settings and send updated settings to clients
+            lib.saveSettings(serverSettings);
+            sockets.getServerSettings(io, serverSettings);
 
         }
     });

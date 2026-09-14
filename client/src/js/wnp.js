@@ -21,7 +21,7 @@ WNP.s = {
     // Device selection
     aDeviceUI: ["btnPrev", "btnPlay", "btnNext", "btnRefresh", "selDeviceChoices", "devName", "devNameHolder", "mediaTitle", "mediaSubTitle", "mediaArtist", "mediaAlbum", "mediaBitRate", "mediaBitDepth", "mediaSampleRate", "mediaQualityIdent", "devVol", "btnRepeat", "btnShuffle", "progressPlayed", "progressLeft", "progressPercent", "mediaSource", "albumArt", "bgAlbumArtBlur", "btnDevSelect", "oDeviceList", "btnDevPreset", "oPresetList", "btnDevVolume", "rVolume", "mediaLyrics", "lyricPrev", "lyricCurrent", "lyricNext", "lyricAfter", "alerts"],
     // Server actions to be used in the app
-    aServerUI: ["btnReboot", "btnUpdate", "btnShutdown", "btnReloadUI", "sServerUrlHostname", "sServerUrlIP", "sServerVersion", "sClientVersion", "chkLyricsEnabled", "lyricsCacheSize", "btnClearLyricsCache", "lyricsOffsetMs"],
+    aServerUI: ["btnReboot", "btnUpdate", "btnShutdown", "btnReloadUI", "sServerUrlHostname", "sServerUrlIP", "sServerVersion", "sClientVersion", "chkLyricsEnabled", "lyricsCacheSize", "btnClearLyricsCache", "lyricsOffsetMs", "chkArtFitCrop"],
     // Default timeout for alerts in ms
     alertTimeoutMs: 5000
 };
@@ -241,6 +241,20 @@ WNP.setUIListeners = function () {
         });
     });
 
+    // Art mode layout toggle. Stored server-side and broadcast, so flipping it
+    // on a phone switches the kiosk across the room too.
+    if (this.r.chkArtFitCrop) {
+        this.r.chkArtFitCrop.addEventListener("change", function () {
+            socket.emit("display-settings", {
+                features: {
+                    display: {
+                        artFit: this.checked ? "crop" : "full"
+                    }
+                }
+            });
+        });
+    }
+
 };
 
 /**
@@ -328,6 +342,13 @@ WNP.setSocketDefinitions = function () {
         if (WNP.r.lyricsOffsetMs) {
             var offsetMs = (msg && msg.features && msg.features.lyrics && typeof msg.features.lyrics.offsetMs === "number") ? msg.features.lyrics.offsetMs : 0;
             WNP.r.lyricsOffsetMs.value = offsetMs;
+        }
+
+        // Art mode layout. Shared setting, so every connected screen follows.
+        var artFit = (msg && msg.features && msg.features.display && msg.features.display.artFit === "crop") ? "crop" : "full";
+        WNP.setArtFit(artFit);
+        if (WNP.r.chkArtFitCrop) {
+            WNP.r.chkArtFitCrop.checked = (artFit === "crop");
         }
 
     });
@@ -1189,6 +1210,20 @@ WNP.setSourcePhoto = function (hasPhoto) {
     var appEl = document.getElementById("wnpApp");
     if (!appEl) { return; }
     appEl.classList.toggle("is-sourcephoto", !!hasPhoto);
+};
+
+/**
+ * Apply the Art mode layout. "crop" fills the screen with the cover, cropping
+ * its top and bottom; "full" shows the whole cover at full height with a
+ * blurred backdrop filling the sides. Only has a visual effect in Art mode.
+ * @param {string} fit - "crop" or "full".
+ * @returns {undefined}
+ */
+WNP.setArtFit = function (fit) {
+    var appEl = document.getElementById("wnpApp");
+    if (!appEl) { return; }
+    appEl.classList.toggle("fit-crop", fit === "crop");
+    appEl.classList.toggle("fit-full", fit !== "crop");
 };
 
 /**

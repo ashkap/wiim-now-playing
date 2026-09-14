@@ -162,6 +162,12 @@
                                 </button>
                             </li>
                             <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="display-tab" data-bs-toggle="tab"
+                                    data-bs-target="#display-pane" type="button" role="tab">
+                                    <i class="bi bi-display me-2"></i>Display
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
                                 <button class="nav-link" id="about-tab" data-bs-toggle="tab"
                                     data-bs-target="#about-pane" type="button" role="tab">
                                     <i class="bi bi-info-circle me-2"></i>About
@@ -263,6 +269,31 @@
                                             Note: Timings may vary per track and source, so you might have to adjust
                                             this value per track.
                                         </div>
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            <!-- Display Tab -->
+                            <div class="tab-pane fade" id="display-pane" role="tabpanel"
+                                aria-labelledby="display-tab" tabindex="0">
+
+                                <!-- Art mode layout -->
+                                <div class="mb-3">
+                                    <label class="form-label">Art mode layout</label>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkArtFitCrop">
+                                        <label class="form-check-label" for="chkArtFitCrop">Fill the screen with
+                                            album art (crops the cover)</label>
+                                    </div>
+                                    <div class="form-text small text-muted">
+                                        Applies to Art mode (<a href="/art">/art</a>). This setting is shared, so
+                                        changing it here switches every screen.<br />
+                                        <strong>Off</strong>: show the whole cover at full height, with a blurred
+                                        backdrop filling the sides.<br />
+                                        <strong>On</strong>: crop the cover to fill the entire screen. Bigger, but
+                                        the top and bottom of the cover are cut off, and lower-resolution artwork
+                                        looks softer.
                                     </div>
                                 </div>
 
