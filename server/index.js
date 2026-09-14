@@ -229,8 +229,19 @@ app.get("/proxy-art", limiter, function (req, res) {
                 return;
             }
 
-            // Update the content-type header for the response to the client
-            const headers = { ...resp.headers, 'content-type': contentType };
+            // Update the content-type header for the response to the client.
+            // Also make it cacheable: the artwork is requested twice for the
+            // same URL - once by the <img> and once as the blurred backdrop's
+            // CSS background - and without a cache header the browser fetches
+            // it twice, doubling the upstream work and leaving the backdrop
+            // blank whenever that second fetch fails.
+            const headers = {
+                ...resp.headers,
+                'content-type': contentType,
+                'cache-control': 'public, max-age=3600'
+            };
+            delete headers['pragma'];
+            delete headers['expires'];
 
             // Pipe the response to the client
             res.writeHead(resp.statusCode, headers);
