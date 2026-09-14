@@ -806,7 +806,7 @@
             // GPU. The artwork only changes per album now, so this is computed
             // rarely enough that the extra cost does not matter.
             #wnpBgAlbumArt #bgAlbumArtBlur {
-                filter: blur(40px) saturate(1.5) brightness(0.72);
+                filter: blur(64px) saturate(1.5) brightness(0.72);
                 transform: scale(1.2);
             }
 
