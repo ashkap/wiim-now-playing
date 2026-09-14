@@ -860,10 +860,32 @@
                     overflow: visible;
 
                     // Not wanted in this mode
-                    #mediaSource,
                     #mediaLyrics,
                     div:has(>#mediaSubTitle) {
                         display: none;
+                    }
+
+                    // Source logo (Spotify, Tidal, ...) sits just above the
+                    // quality pill, so the "where from / how good" info groups
+                    // together in the bottom right.
+                    #mediaSource {
+                        position: absolute;
+                        right: 0;
+                        bottom: 6.4vh;
+                        display: block;
+                        margin: 0;
+                        text-align: right;
+                        font-size: clamp(0.85rem, 1.05vw, 1.1rem);
+                        letter-spacing: 0.08em;
+                        text-transform: uppercase;
+                        color: rgba(255, 255, 255, 0.8);
+                        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
+
+                        img {
+                            max-height: 30px;
+                            margin-bottom: 0;
+                            filter: invert(1) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.9));
+                        }
                     }
 
                     #mediaTitle {
@@ -915,7 +937,7 @@
                         justify-content: flex-end;
                         gap: 2ch;
                         margin: 0;
-                        font-size: clamp(0.9rem, 1.15vw, 1.15rem);
+                        font-size: clamp(1.05rem, 1.4vw, 1.45rem);
                         background: rgba(0, 0, 0, 0.5);
                         border-color: rgba(255, 255, 255, 0.28);
                     }
