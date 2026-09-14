@@ -800,6 +800,22 @@
         //   .fit-full - whole cover at full height, blurred backdrop at the sides
         &.art-mode {
 
+            // A smoother, richer backdrop behind the artwork. Blurring a
+            // quarter-size layer and scaling it back up gives the softness of a
+            // very large blur radius for a fraction of the cost, which matters
+            // on a Pi 3B; the layer is oversized so the blur's own soft edges
+            // fall outside the screen instead of showing as a border.
+            #wnpBgAlbumArt #bgAlbumArtBlur {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                width: 28%;
+                height: 28%;
+                transform-origin: 50% 50%;
+                transform: translate(-50%, -50%) scale(4);
+                filter: blur(14px) saturate(1.55) brightness(0.72);
+            }
+
             @media (orientation: landscape) {
 
                 .wnpContainer {
