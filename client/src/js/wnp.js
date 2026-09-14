@@ -1121,6 +1121,12 @@ WNP.setAlbumArt = function (imgUri) {
     WNP.d.albumArtRetries = 0;
     this.r.albumArt.src = imgUri;
     this.r.bgAlbumArtBlur.style.backgroundImage = "url('" + imgUri + "')";
+
+    // Restart any per-track artwork animation (the zoom-out reveal), so each
+    // new track begins the reveal again rather than sitting at its end state.
+    this.r.albumArt.style.animation = "none";
+    void this.r.albumArt.offsetWidth; // reflow, so the animation can re-trigger
+    this.r.albumArt.style.animation = "";
 };
 
 /**
@@ -1215,18 +1221,20 @@ WNP.setSourcePhoto = function (hasPhoto) {
 /**
  * Apply the Art mode layout. "full" shows the whole cover at full height with
  * a blurred backdrop at the sides; "crop" fills the screen with the cover,
- * cropping its top and bottom; "kenburns" is "crop" plus a very slow drift.
+ * cropping its top and bottom; "kenburns" is "crop" plus a very slow drift;
+ * "zoomout" starts at "crop" and pulls back to "full" once per track.
  * Only has a visual effect in Art mode.
- * @param {string} fit - "full", "crop" or "kenburns".
+ * @param {string} fit - "full", "crop", "kenburns" or "zoomout".
  * @returns {undefined}
  */
 WNP.setArtFit = function (fit) {
     var appEl = document.getElementById("wnpApp");
     if (!appEl) { return; }
-    var valid = (fit === "crop" || fit === "kenburns") ? fit : "full";
+    var valid = (["crop", "kenburns", "zoomout"].indexOf(fit) !== -1) ? fit : "full";
     appEl.classList.toggle("fit-full", valid === "full");
     appEl.classList.toggle("fit-crop", valid === "crop");
     appEl.classList.toggle("fit-kenburns", valid === "kenburns");
+    appEl.classList.toggle("fit-zoomout", valid === "zoomout");
 };
 
 /**

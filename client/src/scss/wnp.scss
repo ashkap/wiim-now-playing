@@ -984,6 +984,24 @@
                 object-fit: contain;
             }
 
+            // Fit: start at the "fill the screen" framing and slowly pull back
+            // to the "whole cover" one, once per track, so the blurred backdrop
+            // eases in at the sides. 16/9 is exactly the scale at which a square
+            // cover fitted to the height instead fills the width, so the two
+            // ends of the animation land precisely on the other two fits.
+            // Restarted per track from setAlbumArt().
+            &.fit-zoomout .wnpAlbumArt {
+                overflow: hidden;
+
+                #albumArt {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                    animation: wnpZoomOut 45s ease-out 1 both;
+                    will-change: transform;
+                }
+            }
+
             // Fit: crop plus a very slow drift across the artwork (Ken Burns),
             // so more of a cropped cover is revealed over time. The transform
             // runs on the wrapper, so it is GPU-composited - no JS loop and no
@@ -1109,7 +1127,26 @@
 
 @media (prefers-reduced-motion: reduce) {
 
-    #wnpApp.art-mode.fit-kenburns .wnpAlbumArt>div {
+    #wnpApp.tv-mode.art-mode.fit-kenburns .wnpAlbumArt #albumArt {
+        animation: none;
+    }
+}
+
+/* Zoom-out reveal for Art mode: from the full-bleed framing back to the whole
+   centred cover. 1.7778 = 16/9, the exact ratio between the two. */
+@keyframes wnpZoomOut {
+    from {
+        transform: scale(1.7778);
+    }
+
+    to {
+        transform: scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    #wnpApp.tv-mode.art-mode.fit-zoomout .wnpAlbumArt #albumArt {
         animation: none;
     }
 }
