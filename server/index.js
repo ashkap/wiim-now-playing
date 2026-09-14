@@ -497,6 +497,17 @@ io.on("connection", (socket) => {
     });
 
     /**
+     * Listener for a UI reload request.
+     * Broadcasts to every connected client so all screens - including the
+     * kiosk across the room - reload and pick up new client assets.
+     * @returns {undefined}
+     */
+    socket.on("ui-reload", () => {
+        log("Socket event", "ui-reload");
+        io.emit("ui-reload");
+    });
+
+    /**
      * Listener for server reboot.
      * @returns {undefined}
      */

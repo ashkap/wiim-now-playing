@@ -21,7 +21,7 @@ WNP.s = {
     // Device selection
     aDeviceUI: ["btnPrev", "btnPlay", "btnNext", "btnRefresh", "selDeviceChoices", "devName", "devNameHolder", "mediaTitle", "mediaSubTitle", "mediaArtist", "mediaAlbum", "mediaBitRate", "mediaBitDepth", "mediaSampleRate", "mediaQualityIdent", "devVol", "btnRepeat", "btnShuffle", "progressPlayed", "progressLeft", "progressPercent", "mediaSource", "albumArt", "bgAlbumArtBlur", "btnDevSelect", "oDeviceList", "btnDevPreset", "oPresetList", "btnDevVolume", "rVolume", "mediaLyrics", "lyricPrev", "lyricCurrent", "lyricNext", "lyricAfter", "alerts"],
     // Server actions to be used in the app
-    aServerUI: ["btnReboot", "btnUpdate", "btnShutdown", "btnReloadUI", "sServerUrlHostname", "sServerUrlIP", "sServerVersion", "sClientVersion", "chkLyricsEnabled", "lyricsCacheSize", "btnClearLyricsCache", "lyricsOffsetMs", "selArtFit"],
+    aServerUI: ["btnReboot", "btnUpdate", "btnShutdown", "btnReloadUI", "sServerUrlHostname", "sServerUrlIP", "sServerVersion", "sClientVersion", "chkLyricsEnabled", "lyricsCacheSize", "btnClearLyricsCache", "lyricsOffsetMs", "selArtFit", "btnReloadAll"],
     // Default timeout for alerts in ms
     alertTimeoutMs: 5000
 };
@@ -203,10 +203,19 @@ WNP.setUIListeners = function () {
         socket.emit("server-shutdown");
     });
 
-    // Reload UI button
+    // Reload UI button (this screen only)
     this.r.btnReloadUI.addEventListener("click", function () {
         location.reload();
     });
+
+    // Reload all screens button: asks the server to broadcast a reload, so the
+    // kiosk picks up new styling or scripts without walking over to it.
+    if (this.r.btnReloadAll) {
+        this.r.btnReloadAll.addEventListener("click", function () {
+            WNP.showAlert("Reloading all screens...", "info");
+            socket.emit("ui-reload");
+        });
+    }
 
     // Set lyrics toggle
     this.r.chkLyricsEnabled.addEventListener("change", function () {
@@ -755,6 +764,13 @@ WNP.setSocketDefinitions = function () {
                 // No action
                 break;
         }
+    });
+
+    // On UI reload broadcast: another screen (or this one) asked every client
+    // to reload, e.g. after the client assets were updated.
+    socket.on("ui-reload", function () {
+        console.log("WNP", "Reload requested for all screens");
+        location.reload();
     });
 
     // On server reboot
