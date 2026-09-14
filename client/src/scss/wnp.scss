@@ -806,17 +806,21 @@
             // GPU. The artwork only changes per album now, so this is computed
             // rarely enough that the extra cost does not matter.
             #wnpBgAlbumArt #bgAlbumArtBlur {
-                // Oversized by layout rather than by transform. A blurred
-                // element fades to transparent at its own edges, so it has to
-                // extend well past the screen - and on the Pi's GPU a transform
-                // combined with a large filter does not reliably do that, which
-                // left the sides showing the app's base gradient.
+                // A blurred element fades to transparent at its own edges, so
+                // it has to extend past the screen - but it must be oversized
+                // by transform, not by layout. The Pi 3B's VideoCore IV caps
+                // textures at 2048px, and a layout-oversized layer (140% of
+                // 1920 = 2688px) exceeds that, so the filtered layer cannot be
+                // rasterised and drops out entirely, leaving the app's base
+                // gradient at the edges. A transform is applied after
+                // rasterisation, so the layer stays 1920x1080 and within the
+                // cap. This is why the base tv-mode backdrop always worked.
                 position: absolute;
-                top: -20%;
-                left: -20%;
-                width: 140%;
-                height: 140%;
-                transform: none;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                transform: scale(1.35);
                 filter: blur(56px) saturate(1.5) brightness(0.72);
             }
 
