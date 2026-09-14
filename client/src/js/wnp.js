@@ -40,7 +40,8 @@ WNP.d = {
     lyricsIndex: null, // Current lyrics line index
     alertTimeout: null, // Alert timeout, used for storing the timeout for the alerts
     albumArtTarget: null, // Desired album art URI, used to retry on load errors
-    albumArtRetries: 0 // Album art load-error retry counter
+    albumArtRetries: 0, // Album art load-error retry counter
+    prevAlbumArtKey: null // Last artwork actually applied, ignoring cache-busting
 };
 
 // Reference placeholders.
@@ -611,7 +612,15 @@ WNP.setSocketDefinitions = function () {
             console.log("WNP", "Track changed:", currentTrackInfo);
             WNP.clearLyrics();
         }
-        if (trackChanged && currentAlbumArt != albumArtUri) {
+        // Only touch the artwork when the underlying image actually changes.
+        // The proxied URL carries a cache-busting timestamp that changes on
+        // every poll, so comparing that re-fetched the same cover on every
+        // track and restarted the Art mode reveal. Compare the raw URI instead,
+        // so consecutive tracks from one album leave the artwork - and its
+        // animation - alone.
+        var albumArtKey = sourcePhoto ? sourcePhoto : albumArtUriRaw;
+        if (albumArtKey !== WNP.d.prevAlbumArtKey) {
+            WNP.d.prevAlbumArtKey = albumArtKey;
             WNP.setAlbumArt(albumArtUri);
         }
 
