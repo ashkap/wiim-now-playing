@@ -961,6 +961,23 @@
             &.fit-full .wnpAlbumArt #albumArt {
                 object-fit: contain;
             }
+
+            // Fit: crop plus a very slow drift across the artwork (Ken Burns),
+            // so more of a cropped cover is revealed over time. The transform
+            // runs on the wrapper, so it is GPU-composited - no JS loop and no
+            // per-frame repaint, which keeps it cheap on a Pi 3B.
+            &.fit-kenburns .wnpAlbumArt {
+                overflow: hidden;
+
+                #albumArt {
+                    object-fit: cover;
+                }
+
+                >div {
+                    animation: wnpKenBurns 75s ease-in-out infinite alternate;
+                    will-change: transform;
+                }
+            }
         }
 
         // ----------------------------------------------------------
@@ -1040,4 +1057,22 @@
         box-shadow: 3px 3px 16px rgba(0, 0, 0, .85);
     }
 
+}
+/* Ken Burns drift for Art mode. The extra scale gives the pan some headroom so
+   the artwork never pulls away from the edges of the screen. */
+@keyframes wnpKenBurns {
+    from {
+        transform: scale(1.12) translate(-1.4%, -3.2%);
+    }
+
+    to {
+        transform: scale(1.12) translate(1.4%, 3.2%);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    #wnpApp.art-mode.fit-kenburns .wnpAlbumArt>div {
+        animation: none;
+    }
 }

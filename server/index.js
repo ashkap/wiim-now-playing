@@ -473,7 +473,7 @@ io.on("connection", (socket) => {
         if (msg && msg.features && msg.features.display) {
 
             // Art mode fit: "full" or "crop"
-            if (msg.features.display.artFit === "full" || msg.features.display.artFit === "crop") {
+            if (["full", "crop", "kenburns"].indexOf(msg.features.display.artFit) !== -1) {
                 serverSettings.features.display.artFit = msg.features.display.artFit;
             }
 

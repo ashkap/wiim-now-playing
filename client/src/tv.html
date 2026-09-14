@@ -267,20 +267,21 @@
 
                                 <!-- Art mode layout -->
                                 <div class="mb-3">
-                                    <label class="form-label">Art mode layout</label>
-                                    <div class="form-check form-switch">
-                                        <input class="form-check-input" type="checkbox" id="chkArtFitCrop">
-                                        <label class="form-check-label" for="chkArtFitCrop">Fill the screen with
-                                            album art (crops the cover)</label>
-                                    </div>
+                                    <label class="form-label" for="selArtFit">Art mode layout</label>
+                                    <select id="selArtFit" class="form-select">
+                                        <option value="full">Whole cover, blurred backdrop at the sides</option>
+                                        <option value="crop">Fill the screen (crops the cover)</option>
+                                        <option value="kenburns">Fill the screen, slow pan (Ken Burns)</option>
+                                    </select>
                                     <div class="form-text small text-muted">
                                         Applies to Art mode (<a href="/art">/art</a>). This setting is shared, so
                                         changing it here switches every screen.<br />
-                                        <strong>Off</strong>: show the whole cover at full height, with a blurred
-                                        backdrop filling the sides.<br />
-                                        <strong>On</strong>: crop the cover to fill the entire screen. Bigger, but
-                                        the top and bottom of the cover are cut off, and lower-resolution artwork
-                                        looks softer.
+                                        <strong>Whole cover</strong>: the entire cover at full height, nothing
+                                        cropped.<br />
+                                        <strong>Fill the screen</strong>: bigger, but the top and bottom of the
+                                        cover are cut off and lower-resolution artwork looks softer.<br />
+                                        <strong>Slow pan</strong>: as above, with a very slow drift across the
+                                        artwork so you see more of it over time.
                                     </div>
                                 </div>
 
