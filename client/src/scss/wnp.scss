@@ -969,12 +969,24 @@
             &.fit-kenburns .wnpAlbumArt {
                 overflow: hidden;
 
-                #albumArt {
-                    object-fit: cover;
+                >div {
+                    position: relative;
+                    overflow: hidden;
                 }
 
-                >div {
-                    animation: wnpKenBurns 45s ease-in-out infinite alternate;
+                // Let the cover run at its natural (square) height so there is
+                // real image above and below the 16:9 frame to travel through,
+                // then slide it vertically. min-height keeps an unusually wide
+                // cover filling the frame.
+                #albumArt {
+                    position: absolute;
+                    top: 50%;
+                    left: 0;
+                    width: 100%;
+                    height: auto;
+                    min-height: 100%;
+                    object-fit: cover;
+                    animation: wnpKenBurns 60s ease-in-out infinite alternate;
                     will-change: transform;
                 }
             }
@@ -1058,17 +1070,18 @@
     }
 
 }
-/* Ken Burns for Art mode: a slow zoom paired with a drift. Starting at scale 1
-   means the artwork sits exactly edge-to-edge at one end of the cycle, and the
-   zoom always outpaces the translation, so no gap can ever appear at the edges
-   (the pan stays within (scale - 1) / 2 of the frame). */
+/* Ken Burns for Art mode. The cover is square but the frame is 16:9, so ~44% of
+   it is hidden above and below. Rather than zoom (which would crop it further),
+   slide vertically through that hidden area so the top and bottom are revealed
+   over time. -50% is centred; +/-15% stays well inside the available overflow,
+   so the artwork always covers the frame. */
 @keyframes wnpKenBurns {
     from {
-        transform: scale(1) translate(0, 0);
+        transform: translateY(-65%);
     }
 
     to {
-        transform: scale(1.22) translate(-3%, -8%);
+        transform: translateY(-35%);
     }
 }
 
