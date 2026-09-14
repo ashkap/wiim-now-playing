@@ -806,8 +806,18 @@
             // GPU. The artwork only changes per album now, so this is computed
             // rarely enough that the extra cost does not matter.
             #wnpBgAlbumArt #bgAlbumArtBlur {
+                // Oversized by layout rather than by transform. A blurred
+                // element fades to transparent at its own edges, so it has to
+                // extend well past the screen - and on the Pi's GPU a transform
+                // combined with a large filter does not reliably do that, which
+                // left the sides showing the app's base gradient.
+                position: absolute;
+                top: -20%;
+                left: -20%;
+                width: 140%;
+                height: 140%;
+                transform: none;
                 filter: blur(64px) saturate(1.5) brightness(0.72);
-                transform: scale(1.2);
             }
 
             @media (orientation: landscape) {
