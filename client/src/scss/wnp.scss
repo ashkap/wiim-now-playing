@@ -800,20 +800,14 @@
         //   .fit-full - whole cover at full height, blurred backdrop at the sides
         &.art-mode {
 
-            // A smoother, richer backdrop behind the artwork. Blurring a
-            // quarter-size layer and scaling it back up gives the softness of a
-            // very large blur radius for a fraction of the cost, which matters
-            // on a Pi 3B; the layer is oversized so the blur's own soft edges
-            // fall outside the screen instead of showing as a border.
+            // A richer, smoother backdrop than the shared default. Kept as a
+            // plain full-size blur: blurring a quarter-size layer and scaling it
+            // back up is far cheaper, but renders as an empty layer on the Pi's
+            // GPU. The artwork only changes per album now, so this is computed
+            // rarely enough that the extra cost does not matter.
             #wnpBgAlbumArt #bgAlbumArtBlur {
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                width: 28%;
-                height: 28%;
-                transform-origin: 50% 50%;
-                transform: translate(-50%, -50%) scale(4);
-                filter: blur(14px) saturate(1.55) brightness(0.72);
+                filter: blur(40px) saturate(1.5) brightness(0.72);
+                transform: scale(1.2);
             }
 
             @media (orientation: landscape) {
@@ -822,7 +816,7 @@
                     display: flex;
                     flex-direction: column;
                     justify-content: flex-end;
-                    padding: 0 4vw 2.8vh;
+                    padding: 0 4vw 1.2vh;
                 }
 
                 // Gradient so the text stays legible over any artwork.
@@ -994,8 +988,8 @@
                         #mediaSource {
                             position: fixed;
                             right: 3.2vw;
-                            top: 36%;
-                            bottom: auto;
+                            top: auto;
+                            bottom: 26vh;
                             width: 13vw;
                             text-align: center;
 
@@ -1007,8 +1001,8 @@
                         #mediaQuality {
                             position: fixed;
                             right: 3.2vw;
-                            top: 43%;
-                            bottom: auto;
+                            top: auto;
+                            bottom: 9vh;
                             width: 13vw;
                             flex-direction: column;
                             align-items: center;
