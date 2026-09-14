@@ -21,7 +21,7 @@ WNP.s = {
     // Device selection
     aDeviceUI: ["btnPrev", "btnPlay", "btnNext", "btnRefresh", "selDeviceChoices", "devName", "devNameHolder", "mediaTitle", "mediaSubTitle", "mediaArtist", "mediaAlbum", "mediaBitRate", "mediaBitDepth", "mediaSampleRate", "mediaQualityIdent", "devVol", "btnRepeat", "btnShuffle", "progressPlayed", "progressLeft", "progressPercent", "mediaSource", "albumArt", "bgAlbumArtBlur", "btnDevSelect", "oDeviceList", "btnDevPreset", "oPresetList", "btnDevVolume", "rVolume", "mediaLyrics", "lyricPrev", "lyricCurrent", "lyricNext", "lyricAfter", "alerts"],
     // Server actions to be used in the app
-    aServerUI: ["btnReboot", "btnUpdate", "btnShutdown", "btnReloadUI", "sServerUrlHostname", "sServerUrlIP", "sServerVersion", "sClientVersion", "chkLyricsEnabled", "lyricsCacheSize", "btnClearLyricsCache", "lyricsOffsetMs", "selArtFit", "btnReloadAll"],
+    aServerUI: ["btnReboot", "btnUpdate", "btnShutdown", "btnReloadUI", "sServerUrlHostname", "sServerUrlIP", "sServerVersion", "sClientVersion", "chkLyricsEnabled", "lyricsCacheSize", "btnClearLyricsCache", "lyricsOffsetMs", "selArtFit", "btnReloadAll", "chkPureArt"],
     // Default timeout for alerts in ms
     alertTimeoutMs: 5000
 };
@@ -41,7 +41,8 @@ WNP.d = {
     alertTimeout: null, // Alert timeout, used for storing the timeout for the alerts
     albumArtTarget: null, // Desired album art URI, used to retry on load errors
     albumArtRetries: 0, // Album art load-error retry counter
-    prevAlbumArtKey: null // Last artwork actually applied, ignoring cache-busting
+    prevAlbumArtKey: null, // Last artwork actually applied, ignoring cache-busting
+    infoTimer: null // Timer that fades the track details away again in pure art mode
 };
 
 // Reference placeholders.
@@ -253,6 +254,18 @@ WNP.setUIListeners = function () {
 
     // Art mode layout toggle. Stored server-side and broadcast, so flipping it
     // on a phone switches the kiosk across the room too.
+    if (this.r.chkPureArt) {
+        this.r.chkPureArt.addEventListener("change", function () {
+            socket.emit("display-settings", {
+                features: {
+                    display: {
+                        pureArt: this.checked
+                    }
+                }
+            });
+        });
+    }
+
     if (this.r.selArtFit) {
         this.r.selArtFit.addEventListener("change", function () {
             socket.emit("display-settings", {
@@ -358,8 +371,14 @@ WNP.setSocketDefinitions = function () {
         var artFit = (msg && msg.features && msg.features.display && msg.features.display.artFit) ? msg.features.display.artFit : "full";
         WNP.setArtFit(artFit);
         if (WNP.r.selArtFit) {
-            WNP.r.selArtFit.value = (artFit === "crop" || artFit === "kenburns") ? artFit : "full";
+            WNP.r.selArtFit.value = (["crop", "kenburns", "zoomout"].indexOf(artFit) !== -1) ? artFit : "full";
         }
+
+        // Pure art mode (shared setting, like the fit above)
+        var pureArt = Boolean(msg && msg.features && msg.features.display && msg.features.display.pureArt);
+        var appEl = document.getElementById("wnpApp");
+        if (appEl) { appEl.classList.toggle("pure-art", pureArt); }
+        if (WNP.r.chkPureArt) { WNP.r.chkPureArt.checked = pureArt; }
 
     });
 
@@ -611,6 +630,7 @@ WNP.setSocketDefinitions = function () {
             WNP.d.prevTrackInfo = currentTrackInfo; // Remember the last track info
             console.log("WNP", "Track changed:", currentTrackInfo);
             WNP.clearLyrics();
+            WNP.flashTrackInfo();
         }
         // Only touch the artwork when the underlying image actually changes.
         // The proxied URL carries a cache-busting timestamp that changes on
@@ -1241,6 +1261,22 @@ WNP.setSourcePhoto = function (hasPhoto) {
     var appEl = document.getElementById("wnpApp");
     if (!appEl) { return; }
     appEl.classList.toggle("is-sourcephoto", !!hasPhoto);
+};
+
+/**
+ * Briefly reveal the track details. Used by pure art mode, where the title and
+ * artist are otherwise hidden: they fade in on a track change and back out
+ * again shortly after, leaving just the artwork and the elapsed bar.
+ * @returns {undefined}
+ */
+WNP.flashTrackInfo = function () {
+    var appEl = document.getElementById("wnpApp");
+    if (!appEl) { return; }
+    appEl.classList.add("info-visible");
+    if (WNP.d.infoTimer) { clearTimeout(WNP.d.infoTimer); }
+    WNP.d.infoTimer = setTimeout(function () {
+        appEl.classList.remove("info-visible");
+    }, 20000);
 };
 
 /**

@@ -971,6 +971,86 @@
                     position: fixed;
                 }
 
+                // --- Pure art: let the artwork stand alone ---
+                // Only the elapsed bar is permanent. Source and quality move to
+                // the blurred side as a narrow vertical stack, and the title and
+                // artist fade in on a track change then fade back out.
+                &.pure-art {
+
+                    .wnpMediaInfo {
+
+                        div:has(>#mediaAlbum) {
+                            display: none;
+                        }
+
+                        #mediaTitle,
+                        #mediaArtist {
+                            opacity: 0;
+                            transition: opacity 1.6s ease;
+                        }
+
+                        // Stacked vertically so it fits the blurred strip
+                        // beside the cover without shrinking the type.
+                        #mediaSource {
+                            position: fixed;
+                            right: 3.2vw;
+                            top: 36%;
+                            bottom: auto;
+                            width: 13vw;
+                            text-align: center;
+
+                            img {
+                                max-height: 34px;
+                            }
+                        }
+
+                        #mediaQuality {
+                            position: fixed;
+                            right: 3.2vw;
+                            top: 43%;
+                            bottom: auto;
+                            width: 13vw;
+                            flex-direction: column;
+                            align-items: center;
+                            gap: 0.5em;
+                            padding: 0.9em 0.7em;
+                            border-radius: 22px;
+                            text-align: center;
+                        }
+                    }
+
+                    .wnpFooter {
+
+                        #progressPlayed,
+                        #progressLeft {
+                            opacity: 0;
+                            transition: opacity 1.6s ease;
+                        }
+                    }
+
+                    // Only a whisper of scrim behind the bar; the full one
+                    // comes up with the track details.
+                    .wnpContainer::after {
+                        opacity: 0.32;
+                        transition: opacity 1.6s ease;
+                    }
+                }
+
+                // Briefly revealed on a track change (see flashTrackInfo)
+                &.pure-art.info-visible {
+
+                    .wnpMediaInfo #mediaTitle,
+                    .wnpMediaInfo #mediaArtist,
+                    .wnpFooter #progressPlayed,
+                    .wnpFooter #progressLeft {
+                        opacity: 1;
+                    }
+
+                    .wnpContainer::after {
+                        opacity: 1;
+                    }
+                }
+
                 // --- Progress, full width beneath the info ---
                 .wnpFooter {
                     position: relative;

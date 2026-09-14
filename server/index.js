@@ -76,7 +76,8 @@ let serverSettings = { // Placeholder for current server settings
             "offsetMs": 0 // The offset in milliseconds to apply to the synced lyrics, can be positive or negative, default is 0.
         },
         "display": {
-            "artFit": "full" // Art mode (/art) fit: "full" shows the whole cover, "crop" fills the screen
+            "artFit": "full", // Art mode (/art) fit: "full" shows the whole cover, "crop" fills the screen
+            "pureArt": false // Art mode: show only the elapsed bar, with track details appearing briefly on a change
         }
     },
     "server": null, // Placeholder for the express server (port) information
@@ -475,6 +476,12 @@ io.on("connection", (socket) => {
             // Art mode fit: "full" or "crop"
             if (["full", "crop", "kenburns", "zoomout"].indexOf(msg.features.display.artFit) !== -1) {
                 serverSettings.features.display.artFit = msg.features.display.artFit;
+            }
+
+            // Pure art: hide everything but the elapsed bar, showing the track
+            // details only briefly on a change.
+            if (typeof msg.features.display.pureArt === "boolean") {
+                serverSettings.features.display.pureArt = msg.features.display.pureArt;
             }
 
             // Save settings and send updated settings to clients
