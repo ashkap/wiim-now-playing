@@ -974,7 +974,7 @@
                 }
 
                 >div {
-                    animation: wnpKenBurns 75s ease-in-out infinite alternate;
+                    animation: wnpKenBurns 45s ease-in-out infinite alternate;
                     will-change: transform;
                 }
             }
@@ -1058,15 +1058,17 @@
     }
 
 }
-/* Ken Burns drift for Art mode. The extra scale gives the pan some headroom so
-   the artwork never pulls away from the edges of the screen. */
+/* Ken Burns for Art mode: a slow zoom paired with a drift. Starting at scale 1
+   means the artwork sits exactly edge-to-edge at one end of the cycle, and the
+   zoom always outpaces the translation, so no gap can ever appear at the edges
+   (the pan stays within (scale - 1) / 2 of the frame). */
 @keyframes wnpKenBurns {
     from {
-        transform: scale(1.12) translate(-1.4%, -3.2%);
+        transform: scale(1) translate(0, 0);
     }
 
     to {
-        transform: scale(1.12) translate(1.4%, 3.2%);
+        transform: scale(1.22) translate(-3%, -8%);
     }
 }
 
