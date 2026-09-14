@@ -1164,14 +1164,35 @@ WNP.setAlbumArt = function (imgUri) {
     console.log("WNP", "Set Album Art", imgUri);
     WNP.d.albumArtTarget = imgUri; // Remember the desired art, for retry-on-error
     WNP.d.albumArtRetries = 0;
+    this.r.albumArt.onload = WNP.syncBackdrop;
     this.r.albumArt.src = imgUri;
-    this.r.bgAlbumArtBlur.style.backgroundImage = "url('" + imgUri + "')";
+    // A cached image may already be complete, in which case load never fires.
+    if (this.r.albumArt.complete && this.r.albumArt.naturalWidth) {
+        WNP.syncBackdrop();
+    }
 
     // Restart any per-track artwork animation (the zoom-out reveal), so each
     // new track begins the reveal again rather than sitting at its end state.
     this.r.albumArt.style.animation = "none";
     void this.r.albumArt.offsetWidth; // reflow, so the animation can re-trigger
     this.r.albumArt.style.animation = "";
+};
+
+/**
+ * Point the blurred backdrop at whatever the artwork <img> has just loaded.
+ * Driven by the image's load event rather than set at the same moment as the
+ * <img> src: setting both together fires two simultaneous requests for the same
+ * proxied URL, and the Pi was losing that race often enough that the backdrop
+ * ended up with no image and the screen edges showed the base gradient.
+ * Going through the load event means this is a cache hit, not a second fetch.
+ * @returns {undefined}
+ */
+WNP.syncBackdrop = function () {
+    if (!WNP.r.albumArt || !WNP.r.bgAlbumArtBlur) { return; }
+    var src = WNP.r.albumArt.currentSrc || WNP.r.albumArt.src;
+    if (src) {
+        WNP.r.bgAlbumArtBlur.style.backgroundImage = "url('" + src + "')";
+    }
 };
 
 /**
@@ -1188,7 +1209,6 @@ WNP.onAlbumArtError = function () {
     if (!target || target === fallback || target.indexOf("img/") !== -1) {
         if (WNP.r.albumArt.getAttribute("src") !== fallback) {
             WNP.r.albumArt.src = fallback;
-            WNP.r.bgAlbumArtBlur.style.backgroundImage = "url('" + fallback + "')";
         }
         return;
     }
@@ -1202,13 +1222,11 @@ WNP.onAlbumArtError = function () {
             // Only retry if the desired art hasn't changed since (e.g. new track).
             if (WNP.d.albumArtTarget === target) {
                 WNP.r.albumArt.src = retryUri;
-                WNP.r.bgAlbumArtBlur.style.backgroundImage = "url('" + retryUri + "')";
             }
         }, 700 * WNP.d.albumArtRetries);
     } else {
         WNP.d.albumArtTarget = fallback; // Give up; treat further errors as local.
         WNP.r.albumArt.src = fallback;
-        WNP.r.bgAlbumArtBlur.style.backgroundImage = "url('" + fallback + "')";
     }
 };
 
