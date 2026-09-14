@@ -921,6 +921,14 @@
                     }
                 }
 
+                // .wnpFooter is a positioned ancestor in this mode, which would
+                // otherwise re-anchor the absolutely positioned volume readout to
+                // it (dropping it off the bottom of the screen). Pin it to the
+                // viewport instead; tv-mode's top/right offsets still apply.
+                #devVolumeHolder {
+                    position: fixed;
+                }
+
                 // --- Progress, full width beneath the info ---
                 .wnpFooter {
                     position: relative;
