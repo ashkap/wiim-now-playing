@@ -1213,7 +1213,7 @@
                     display: flex;
                     flex-direction: column;
                     justify-content: flex-end;
-                    padding: 0 4vw 1.2vh;
+                    padding: 0 4vw 0.8vh;
                 }
 
                 // Gradient so the caption strip stays legible over any artwork.
@@ -1238,11 +1238,11 @@
                 // square: a vinyl back is, a CD tray inlay is far wider.
                 .wnpAlbumArt {
                     position: absolute;
-                    top: 3.5vh;
-                    bottom: 22vh;
+                    top: 1.8vh;
+                    bottom: 18.3vh;
                     left: 0;
                     right: 50%;
-                    padding: 0 1.4vw;
+                    padding: 0 1vw;
                     z-index: 1;
                     display: flex;
                     align-items: center;
@@ -1252,11 +1252,11 @@
 
                 .wnpSleeveArt {
                     position: absolute;
-                    top: 3.5vh;
-                    bottom: 22vh;
+                    top: 1.8vh;
+                    bottom: 18.3vh;
                     left: 50%;
                     right: 0;
-                    padding: 0 1.4vw;
+                    padding: 0 1vw;
                     z-index: 1;
                     display: flex;
                     align-items: center;
@@ -1306,12 +1306,22 @@
                     position: relative;
                     z-index: 3;
                     display: block;
-                    padding: 0 0 5.4vh;
+                    // Kept as tight as the corner readouts allow: every pixel
+                    // reserved here is one the artwork does not get.
+                    padding: 0 0 4.6vh;
                     overflow: visible;
 
-                    // Not wanted in this mode
+                    // Not wanted in this mode. Targeted by class rather than
+                    // :has(), which has not matched reliably on the Pi - and
+                    // here a rule that silently fails costs the artwork a row.
+                    //
+                    // The album name goes too: in this mode you are looking at
+                    // that album's front and back covers, so its name is
+                    // already in front of you, and the row it occupied is
+                    // worth more as artwork.
                     #mediaLyrics,
-                    div:has(>#mediaSubTitle) {
+                    .wnpSubTitleRow,
+                    .wnpAlbumRow {
                         display: none;
                     }
 
@@ -1342,7 +1352,7 @@
                         text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85);
                     }
 
-                    div:has(>#mediaAlbum) {
+                    .wnpAlbumRow {
                         font-size: clamp(0.9rem, 1.15vw, 1.15rem);
                         letter-spacing: 0.10em;
                         text-transform: uppercase;
@@ -1362,7 +1372,7 @@
                         left: 4vw;
                         right: auto;
                         top: auto;
-                        bottom: 8.6vh;
+                        bottom: 6.8vh;
                         width: auto;
                         text-align: left;
 
@@ -1378,7 +1388,7 @@
                         right: 4vw;
                         left: auto;
                         top: auto;
-                        bottom: 8.6vh;
+                        bottom: 6.8vh;
                         width: auto;
                         display: flex;
                         flex-direction: column;
@@ -1429,7 +1439,7 @@
                     position: relative;
                     z-index: 3;
                     padding: 0;
-                    margin-top: 1.6vh;
+                    margin-top: 0.9vh;
 
                     #progressPercent {
                         height: 9px;
