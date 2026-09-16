@@ -161,7 +161,10 @@ const musicBrainz = (path) => {
                 }
                 // A busy MusicBrainz stays busy for longer than the polite
                 // interval, so back off hard rather than burning the retries.
-                await sleep(MB_BACKOFF_MS * (attempt + 1));
+                // No point waiting after the last attempt.
+                if (attempt < MB_RETRIES) {
+                    await sleep(MB_BACKOFF_MS * (attempt + 1));
+                }
             }
             resolve(result);
         });
