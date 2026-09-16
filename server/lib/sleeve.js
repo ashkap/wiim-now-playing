@@ -36,7 +36,8 @@ const MAX_REDIRECTS = 4;
 // How far to look before giving up. Each step is a network round trip, so
 // these caps are what keep a miss from taking a minute.
 const MAX_SEARCH_RELEASES = 3;  // candidates from the initial title search
-const MAX_SIBLING_RELEASES = 8; // other pressings of the same release group
+const MAX_SIBLING_RELEASES = 14; // other pressings checked, across all groups
+const MAX_GROUPS = 3;           // distinct release groups among the search hits
 const MAX_PANELS = 12;          // images handed to the client to cycle through
 // How many of each type are worth cycling through. A record has one back
 // cover and one tray card, so extras are duplicate scans of the same thing;
@@ -45,7 +46,10 @@ const MAX_PER_TYPE = { Back: 1, Tray: 1, Poster: 1, Booklet: 3, Panel: 3, Liner:
 const MAX_PER_TYPE_DEFAULT = 1;
 
 // Bump when the curation rules change: entries cached under the old rules
-// would otherwise keep serving images the new rules exclude.
+// would otherwise keep serving images the new rules exclude. Widening the
+// search is not a reason to bump it - that changes which albums are found,
+// not what is shown for one already found, so the successful entries stay
+// valid and only the misses are worth discarding.
 const CACHE_FORMAT = 2;
 
 // The printed parts of the package, in the order they are worth looking at.
@@ -325,6 +329,64 @@ const buildKey = (artist, album) => {
 const escapeQuery = (s) => String(s || "").replace(/["\\]/g, " ").trim();
 
 /**
+ * Drop the edition wrapper from an album title.
+ * The device reports what the library calls the record - "Bad (Remastered)",
+ * "Watermark (2009 Remaster)" - while the archive catalogues it under the
+ * plain title. Any pressing will do here, so the suffix is noise.
+ *
+ * Note what is deliberately not stripped: "(Taylor's Version)" and the like
+ * name a genuinely different recording, not a reissue of the same one, and
+ * matching those to the original would show the wrong sleeve.
+ * @param {string} album
+ * @returns {string}
+ */
+const stripEdition = (album) => {
+    const editionWords = "remaster|remastered|deluxe|expanded|anniversary|edition|reissue|mono|stereo|bonus|special|collector|super";
+    return String(album || "")
+        // "(Deluxe Edition)", "[2009 Remaster]", "(25th Anniversary)"
+        .replace(new RegExp("\\s*[\\(\\[][^)\\]]*(?:" + editionWords + ")[^)\\]]*[\\)\\]]", "gi"), "")
+        // A bare year in brackets: "(2016)"
+        .replace(/\s*[\(\[](?:19|20)\d{2}[\)\]]/g, "")
+        // Trailing "- Remastered 2011", "- 2009 Remaster", "- Deluxe Edition"
+        .replace(new RegExp("\\s*[-\u2013\u2014]\\s*(?:(?:19|20)\\d{2}\\s*)?(?:" + editionWords + ")[^,]*$", "i"), "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+};
+
+/**
+ * Reduce a credit string to the primary artist.
+ * The device reports the full credit - "Taylor Swift feat. Post Malone" -
+ * which matches nothing, because the archive files the release under the
+ * headline artist.
+ * @param {string} artist
+ * @returns {string}
+ */
+const primaryArtist = (artist) => {
+    return String(artist || "")
+        .split(/\s*(?:feat\.|featuring|ft\.|,|&|\bwith\b|\bvs\.?\b|\band\b)\s*/i)[0]
+        .trim();
+};
+
+/**
+ * The searches to try, in order, stopping at the first that matches.
+ * @param {string} artist
+ * @param {string} album
+ * @returns {Array<string>}
+ */
+const buildQueries = (artist, album) => {
+    const a = escapeQuery(artist);
+    const b = escapeQuery(album);
+    const queries = [`artist:"${a}" AND release:"${b}"`];
+
+    const a2 = primaryArtist(a);
+    const b2 = stripEdition(b);
+    if (a2 && b2 && (a2 !== a || b2 !== b)) {
+        queries.push(`artist:"${a2}" AND release:"${b2}"`);
+    }
+    return queries;
+};
+
+/**
  * Find scans of the physical package for an album.
  *
  * Looks at the closest title matches first, then at other pressings in the
@@ -349,20 +411,27 @@ const getSleeveArt = async (artist, album) => {
 
     log("Looking up sleeve artwork for:", artist, "-", album);
 
-    const query = `artist:"${escapeQuery(artist)}" AND release:"${escapeQuery(album)}"`;
-    const search = await musicBrainz(
-        "release/?query=" + encodeURIComponent(query) + "&fmt=json&limit=8"
-    );
-    // A null search is a failed request, not an album nobody has heard of.
-    // Caching that as a miss would keep the screen empty for a fortnight over
-    // one throttled lookup, so it is returned uncached and retried next time.
-    if (!search) {
-        log("Lookup failed (no answer from MusicBrainz) for", key);
-        return { status: "error", key: key, images: [] };
+    // The exact title first, then a relaxed one with the edition wrapper and
+    // any featured artists removed. Libraries name records more specifically
+    // than the archive catalogues them, and any pressing will do here.
+    let releases = [];
+    for (const query of buildQueries(artist, album)) {
+        const search = await musicBrainz(
+            "release/?query=" + encodeURIComponent(query) + "&fmt=json&limit=8"
+        );
+        // A null search is a failed request, not an album nobody has heard of.
+        // Caching that as a miss would keep the screen empty for a fortnight
+        // over one throttled lookup, so it is returned uncached and retried.
+        if (!search) {
+            log("Lookup failed (no answer from MusicBrainz) for", key);
+            return { status: "error", key: key, images: [] };
+        }
+        releases = Array.isArray(search.releases) ? search.releases : [];
+        log("Search returned", releases.length, "releases for", key, "via", query);
+        if (releases.length) {
+            break;
+        }
     }
-
-    const releases = Array.isArray(search.releases) ? search.releases : [];
-    log("Search returned", releases.length, "releases for", key);
 
     if (!releases.length) {
         const miss = { status: "not-found", format: CACHE_FORMAT, key: key, images: [] };
@@ -409,14 +478,30 @@ const getSleeveArt = async (artist, album) => {
 
     // Nothing on the obvious matches; try the other pressings of the same
     // record. This is where most back covers actually turn up.
-    const groupId = releases[0]["release-group"] && releases[0]["release-group"].id;
-    if (groupId) {
+    //
+    // Every distinct group among the hits, not just the first: a search for a
+    // reissue often puts a compilation or a different edition at the top, and
+    // stopping there meant never looking at the group that holds the album.
+    const groupIds = [];
+    releases.forEach((release) => {
+        const id = release["release-group"] && release["release-group"].id;
+        if (id && groupIds.indexOf(id) === -1 && groupIds.length < MAX_GROUPS) {
+            groupIds.push(id);
+        }
+    });
+
+    // One budget across all the groups, so widening the search cannot turn a
+    // miss into a minute of requests.
+    let checked = 0;
+    for (const groupId of groupIds) {
+        if (checked >= MAX_SIBLING_RELEASES) {
+            break;
+        }
         const group = await musicBrainz(
             "release?release-group=" + encodeURIComponent(groupId) + "&fmt=json&limit=25"
         );
         const siblings = (group && Array.isArray(group.releases)) ? group.releases : [];
         log("  release group", groupId, "->", siblings.length, "other pressings");
-        let checked = 0;
         for (const sibling of siblings) {
             if (!sibling.id || seen.indexOf(sibling.id) !== -1) {
                 continue;
@@ -450,5 +535,8 @@ const getSleeveArt = async (artist, album) => {
 
 module.exports = {
     getSleeveArt,
-    buildKey
+    buildKey,
+    // Exported for testing: these two decide whether an album is found at all.
+    stripEdition,
+    primaryArtist
 };

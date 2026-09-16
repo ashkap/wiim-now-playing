@@ -25,7 +25,10 @@ WNP.s = {
     // Default timeout for alerts in ms
     alertTimeoutMs: 5000,
     // How long each sleeve scan stays up before the panel moves to the next
-    sleeveCycleMs: 30000
+    sleeveCycleMs: 30000,
+    // How long to wait before re-asking after a failed lookup. MusicBrainz
+    // throttles in bursts, so the first retry is soon and the rest are not.
+    sleeveRetryDelaysMs: [20000, 60000, 180000, 420000]
 };
 
 // Data placeholders.
@@ -48,7 +51,9 @@ WNP.d = {
     sleeveKey: null, // Album the sleeve panel was last asked about
     sleeveImages: [], // Scans of the physical package for that album
     sleeveIndex: 0, // Which of those is on screen
-    sleeveTimer: null // Timer that moves the sleeve panel on to the next scan
+    sleeveTimer: null, // Timer that moves the sleeve panel on to the next scan
+    sleeveRetryTimer: null, // Timer that re-asks after a failed lookup
+    sleeveRetries: 0 // Failed lookups for the current album
 };
 
 // Reference placeholders.
@@ -744,10 +749,21 @@ WNP.setSocketDefinitions = function () {
         if (!msg || msg.key !== WNP.d.sleeveKey) {
             return;
         }
+        // A lookup that failed is not the same as an album with nothing
+        // scanned. MusicBrainz throttles, and when it does the answer comes
+        // back empty through no fault of the album - so ask again rather than
+        // leaving the panel blank until the record happens to play again.
+        if (msg.status === "error") {
+            WNP.clearSleeve();
+            WNP.retrySleeve();
+            return;
+        }
         if (msg.status !== "ok" || !msg.images || !msg.images.length) {
             WNP.clearSleeve();
             return;
         }
+
+        WNP.d.sleeveRetries = 0;
 
         WNP.d.sleeveImages = msg.images;
         WNP.d.sleeveIndex = 0;
@@ -1307,8 +1323,40 @@ WNP.requestSleeve = function (artist, album) {
     }
 
     WNP.d.sleeveKey = key;
+    WNP.d.sleeveArtist = artist;
+    WNP.d.sleeveAlbum = album;
+    WNP.d.sleeveRetries = 0;
     WNP.clearSleeve();
     socket.emit("sleeve-get", { artist: artist, album: album });
+};
+
+/**
+ * Ask again after a lookup failed, backing off each time.
+ * Bounded: if the archive is unreachable for several minutes, the album
+ * simply plays without its sleeve rather than retrying forever.
+ * @returns {undefined}
+ */
+WNP.retrySleeve = function () {
+    if (WNP.d.sleeveRetryTimer) {
+        clearTimeout(WNP.d.sleeveRetryTimer);
+        WNP.d.sleeveRetryTimer = null;
+    }
+    if (WNP.d.sleeveRetries >= WNP.s.sleeveRetryDelaysMs.length) {
+        return;
+    }
+
+    var delay = WNP.s.sleeveRetryDelaysMs[WNP.d.sleeveRetries];
+    var key = WNP.d.sleeveKey;
+    WNP.d.sleeveRetries++;
+
+    WNP.d.sleeveRetryTimer = setTimeout(function () {
+        WNP.d.sleeveRetryTimer = null;
+        // The album may have moved on while we were waiting.
+        if (WNP.d.sleeveKey !== key) {
+            return;
+        }
+        socket.emit("sleeve-get", { artist: WNP.d.sleeveArtist, album: WNP.d.sleeveAlbum });
+    }, delay);
 };
 
 /**
@@ -1321,6 +1369,10 @@ WNP.clearSleeve = function () {
     if (WNP.d.sleeveTimer) {
         clearTimeout(WNP.d.sleeveTimer);
         WNP.d.sleeveTimer = null;
+    }
+    if (WNP.d.sleeveRetryTimer) {
+        clearTimeout(WNP.d.sleeveRetryTimer);
+        WNP.d.sleeveRetryTimer = null;
     }
     WNP.d.sleeveImages = [];
     WNP.d.sleeveIndex = 0;

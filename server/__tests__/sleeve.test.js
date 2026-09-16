@@ -75,6 +75,38 @@ describe("Sleeve Module", () => {
         });
     });
 
+    describe("stripEdition", () => {
+        test("drops the edition wrapper a library adds", () => {
+            expect(sleeve.stripEdition("Bad (Remastered)")).toBe("Bad");
+            expect(sleeve.stripEdition("Watermark (2009 Remaster)")).toBe("Watermark");
+            expect(sleeve.stripEdition("Led Zeppelin IV (Deluxe Edition)")).toBe("Led Zeppelin IV");
+            expect(sleeve.stripEdition("Soul Junction - Remastered 2026")).toBe("Soul Junction");
+            expect(sleeve.stripEdition("Ghostbusters (2016)")).toBe("Ghostbusters");
+        });
+
+        test("keeps a re-recording, which is a different album", () => {
+            // Matching this to the original would show the wrong sleeve.
+            expect(sleeve.stripEdition("1989 (Taylor's Version)")).toBe("1989 (Taylor's Version)");
+        });
+
+        test("leaves a plain title alone", () => {
+            expect(sleeve.stripEdition("Skin")).toBe("Skin");
+            expect(sleeve.stripEdition("Born to Run")).toBe("Born to Run");
+        });
+    });
+
+    describe("primaryArtist", () => {
+        test("reduces a credit to the headline artist", () => {
+            expect(sleeve.primaryArtist("Taylor Swift feat. Post Malone")).toBe("Taylor Swift");
+            expect(sleeve.primaryArtist("Eurythmics, Annie Lennox, Dave Stewart")).toBe("Eurythmics");
+            expect(sleeve.primaryArtist("Denis Solee & The Beegie Adair Trio")).toBe("Denis Solee");
+        });
+
+        test("does not split a name that merely contains a joining word", () => {
+            expect(sleeve.primaryArtist("Rag'n'Bone Man")).toBe("Rag'n'Bone Man");
+        });
+    });
+
     describe("getSleeveArt", () => {
         test("does nothing without an artist and album", async () => {
             const result = await sleeve.getSleeveArt("", "");
@@ -210,6 +242,41 @@ describe("Sleeve Module", () => {
 
             expect(result.status).toBe("not-found");
         }, 20000);
+
+        test("retries with the edition stripped when the exact title misses", async () => {
+            queueResponses([
+                { body: { releases: [] } },                                   // "Bad (Remastered)"
+                { body: { releases: [{ id: "r1", title: "Bad" }] } },         // "Bad"
+                { body: { images: [image(["Front"], "f"), image(["Back"], "b")] } }
+            ]);
+
+            const result = await sleeve.getSleeveArt("Michael Jackson", "Bad (Remastered)");
+
+            expect(result.status).toBe("ok");
+            expect(result.hasBack).toBe(true);
+        }, 30000);
+
+        test("looks at every release group among the hits, not just the first", async () => {
+            // A search for a reissue often puts a compilation at the top;
+            // stopping there meant never reaching the group holding the album.
+            queueResponses([
+                { body: { releases: [
+                    { id: "r1", title: "Hits", "release-group": { id: "gCompilation" } },
+                    { id: "r2", title: "The Album", "release-group": { id: "gAlbum" } }
+                ] } },
+                { body: { images: [image(["Front"], "f1")] } },  // r1: nothing useful
+                { body: { images: [image(["Front"], "f2")] } },  // r2: nothing useful
+                { body: { releases: [{ id: "r3" }] } },          // first group
+                { body: { images: [image(["Front"], "f3")] } },  // still nothing
+                { body: { releases: [{ id: "r4" }] } },          // second group
+                { body: { images: [image(["Back"], "b4")] } }    // found here
+            ]);
+
+            const result = await sleeve.getSleeveArt("Some Artist", "The Album");
+
+            expect(result.status).toBe("ok");
+            expect(result.release.id).toBe("r4");
+        }, 30000);
 
         test("ignores an entry cached under older curation rules", async () => {
             // Otherwise a change to what the panel shows would never reach the
