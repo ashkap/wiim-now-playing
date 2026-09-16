@@ -83,7 +83,9 @@ describe("Sleeve Module", () => {
         });
 
         test("returns a cached answer without touching the network", async () => {
-            sleeveCache.get.mockResolvedValue({ status: "ok", images: [{ url: "u", type: "Back" }] });
+            sleeveCache.get.mockResolvedValue({
+                status: "ok", format: 2, images: [{ url: "u", type: "Back" }]
+            });
 
             const result = await sleeve.getSleeveArt("Radiohead", "Kid A");
 
@@ -126,7 +128,7 @@ describe("Sleeve Module", () => {
             expect(result.status).toBe("not-found");
         }, 20000);
 
-        test("returns the back cover, dropping the front and capping each type", async () => {
+        test("keeps the printed package and drops the disc, front and strips", async () => {
             queueResponses([
                 { body: { releases: [{ id: "r1", title: "Kid A", "release-group": { id: "g1" } }] } },
                 {
@@ -135,6 +137,10 @@ describe("Sleeve Module", () => {
                             image(["Front"], "front"),
                             image(["Back"], "back"),
                             image(["Medium"], "disc"),
+                            image(["Spine"], "spine"),
+                            image([], "untyped"),
+                            image(["Other"], "other"),
+                            image(["Back"], "back-again"),
                             image(["Booklet"], "b1"),
                             image(["Booklet"], "b2"),
                             image(["Booklet"], "b3"),
@@ -152,6 +158,11 @@ describe("Sleeve Module", () => {
             const types = result.images.map((i) => i.type);
             expect(types[0]).toBe("Back"); // the back leads
             expect(types).not.toContain("Front"); // that is the other panel
+            expect(types).not.toContain("Medium"); // the disc is not the point
+            expect(types).not.toContain("Spine"); // a sliver across half a screen
+            expect(types).not.toContain("Other"); // no way to tell what it is
+            expect(types.filter((t) => t === "Back")).toHaveLength(1); // one back, not two scans of it
+            expect(result.images).toHaveLength(4); // back plus three booklet pages
             expect(types.filter((t) => t === "Booklet")).toHaveLength(3); // capped
 
             // Fetched over https, whatever the archive advertised.
@@ -175,17 +186,43 @@ describe("Sleeve Module", () => {
             expect(result.release.id).toBe("r2");
         }, 20000);
 
-        test("keeps package artwork even when no pressing has a back", async () => {
+        test("keeps printed artwork even when no pressing has a back", async () => {
             queueResponses([
                 { body: { releases: [{ id: "r1", title: "Some Album" }] } },
-                { body: { images: [image(["Front"], "front"), image(["Medium"], "disc")] } }
+                { body: { images: [image(["Front"], "front"), image(["Booklet"], "b1")] } }
             ]);
 
             const result = await sleeve.getSleeveArt("Some Artist", "Some Album");
 
             expect(result.status).toBe("ok");
             expect(result.hasBack).toBe(false);
-            expect(result.images.map((i) => i.type)).toEqual(["Medium"]);
+            expect(result.images.map((i) => i.type)).toEqual(["Booklet"]);
+        }, 20000);
+
+        test("an album whose only extra is the disc gets no second panel", async () => {
+            queueResponses([
+                { body: { releases: [{ id: "r1", title: "Disc Only" }] } },
+                { body: { images: [image(["Front"], "front"), image(["Medium"], "disc")] } },
+                { body: { releases: [] } }
+            ]);
+
+            const result = await sleeve.getSleeveArt("Some Artist", "Disc Only");
+
+            expect(result.status).toBe("not-found");
+        }, 20000);
+
+        test("ignores an entry cached under older curation rules", async () => {
+            // Otherwise a change to what the panel shows would never reach the
+            // albums already looked up.
+            sleeveCache.get.mockResolvedValue({
+                status: "ok", format: 1, images: [{ url: "u", type: "Medium" }]
+            });
+            queueResponses([{ body: { releases: [] } }]);
+
+            const result = await sleeve.getSleeveArt("Radiohead", "Kid A");
+
+            expect(https.get).toHaveBeenCalled(); // looked it up again
+            expect(result.status).toBe("not-found");
         }, 20000);
 
         test("follows the archive's redirect instead of failing on it", async () => {

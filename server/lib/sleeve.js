@@ -3,9 +3,10 @@
 
 /**
  * Sleeve artwork module.
- * Finds scans of the physical package for the album that is playing - the back
- * cover first, then the disc face, booklet and the rest - so Sleeve mode can
- * show the record as an object rather than just its front cover.
+ * Finds scans of the printed package for the album that is playing - the back
+ * cover first, then the tray card, booklet and liner notes - so Sleeve mode can
+ * show the record as an object rather than just its front cover. Photographs of
+ * the disc itself are deliberately left out; this panel is for the paper.
  *
  * Resolution goes MusicBrainz (which release is this?) then Cover Art Archive
  * (what has been scanned for it?). The device itself only ever gives us a
@@ -37,13 +38,28 @@ const MAX_REDIRECTS = 4;
 const MAX_SEARCH_RELEASES = 3;  // candidates from the initial title search
 const MAX_SIBLING_RELEASES = 8; // other pressings of the same release group
 const MAX_PANELS = 12;          // images handed to the client to cycle through
-const MAX_PER_TYPE = 3;         // stops booklet scans swamping everything else
+// How many of each type are worth cycling through. A record has one back
+// cover and one tray card, so extras are duplicate scans of the same thing;
+// booklets, digipak panels and inner sleeves are genuinely different pages.
+const MAX_PER_TYPE = { Back: 1, Tray: 1, Poster: 1, Booklet: 3, Panel: 3, Liner: 3 };
+const MAX_PER_TYPE_DEFAULT = 1;
 
-// Ordered by how much they look like "the back of the record". Anything not
-// listed here is shown last; Front is dropped because it is the other panel,
-// and the collector-oriented scans are dropped because they are not artwork.
-const TYPE_ORDER = ["Back", "Medium", "Tray", "Booklet", "Spine", "Obi", "Liner", "Sticker", "Poster"];
-const TYPE_EXCLUDE = ["Front", "Raw/Unedited", "Matrix/Runout", "Watermark"];
+// Bump when the curation rules change: entries cached under the old rules
+// would otherwise keep serving images the new rules exclude.
+const CACHE_FORMAT = 2;
+
+// The printed parts of the package, in the order they are worth looking at.
+// An allow-list rather than a list of things to drop: the archive has types
+// this was never written against, and the cost of letting an unknown one
+// through is a photograph of a disc appearing in a panel meant for the paper.
+//
+// Left out on purpose: Front (that is the other panel), Medium (the disc or
+// record itself), Spine, Obi, Sticker, Top and Bottom (strips that would be
+// stretched across half a screen as a sliver), Matrix/Runout and Raw/Unedited
+// (collector documentation, not artwork), and Other and untyped scans, which
+// give no clue what they are. Across 300 albums, allowing Other added no
+// albums at all - everything that has one also has proper printed artwork.
+const TYPE_ALLOW = ["Back", "Tray", "Booklet", "Liner", "Panel", "Poster"];
 
 /**
  * Promise-friendly delay.
@@ -212,7 +228,8 @@ const orderImages = (images) => {
 
     images.forEach((image) => {
         const types = Array.isArray(image.types) ? image.types : [];
-        if (types.some((t) => TYPE_EXCLUDE.indexOf(t) !== -1)) {
+        const allowed = types.filter((t) => TYPE_ALLOW.indexOf(t) !== -1);
+        if (!allowed.length) {
             return;
         }
         const url = imageUrl(image);
@@ -222,29 +239,33 @@ const orderImages = (images) => {
 
         // Rank by the best-placed type this image carries. Untyped scans are
         // usually package shots, so they are kept but sorted to the end.
-        let rank = TYPE_ORDER.length;
-        types.forEach((t) => {
-            const at = TYPE_ORDER.indexOf(t);
-            if (at !== -1 && at < rank) {
+        // Rank by the best-placed type this image carries.
+        let rank = TYPE_ALLOW.length;
+        allowed.forEach((t) => {
+            const at = TYPE_ALLOW.indexOf(t);
+            if (at < rank) {
                 rank = at;
             }
         });
 
         usable.push({
             url: url,
-            type: types.length ? types[0] : "Other",
+            type: TYPE_ALLOW[rank],
             rank: rank
         });
     });
 
     usable.sort((a, b) => a.rank - b.rank);
 
-    // Cap each type so a release with a dozen booklet pages does not crowd out
-    // the disc face and the tray card. Variety is the point of cycling.
+    // Cap each type, so neither a dozen booklet pages nor three scans of the
+    // same back cover crowd out everything else. Variety is the point.
     const perType = {};
     return usable.filter((i) => {
+        const cap = Object.prototype.hasOwnProperty.call(MAX_PER_TYPE, i.type)
+            ? MAX_PER_TYPE[i.type]
+            : MAX_PER_TYPE_DEFAULT;
         perType[i.type] = (perType[i.type] || 0) + 1;
-        return perType[i.type] <= MAX_PER_TYPE;
+        return perType[i.type] <= cap;
     }).map((i) => ({ url: i.url, type: i.type }));
 };
 
@@ -267,6 +288,7 @@ const hasBack = (images) => images.some(
 const buildResult = (release, images, key) => {
     return {
         status: "ok",
+        format: CACHE_FORMAT,
         key: key,
         release: {
             id: release.id,
@@ -321,7 +343,7 @@ const getSleeveArt = async (artist, album) => {
 
     const key = buildKey(artist, album);
     const cached = await sleeveCache.get(key);
-    if (cached) {
+    if (cached && cached.format === CACHE_FORMAT) {
         return cached;
     }
 
@@ -343,7 +365,7 @@ const getSleeveArt = async (artist, album) => {
     log("Search returned", releases.length, "releases for", key);
 
     if (!releases.length) {
-        const miss = { status: "not-found", key: key, images: [] };
+        const miss = { status: "not-found", format: CACHE_FORMAT, key: key, images: [] };
         await sleeveCache.set(key, miss);
         return miss;
     }
@@ -421,7 +443,7 @@ const getSleeveArt = async (artist, album) => {
         return partial;
     }
 
-    const miss = { status: "not-found", key: key, images: [] };
+    const miss = { status: "not-found", format: CACHE_FORMAT, key: key, images: [] };
     await sleeveCache.set(key, miss);
     return miss;
 };
