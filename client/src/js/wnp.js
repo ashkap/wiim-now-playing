@@ -19,11 +19,13 @@ WNP.s = {
         "spdif": "./img/optical-cdplayer.jpg"
     },
     // Device selection
-    aDeviceUI: ["btnPrev", "btnPlay", "btnNext", "btnRefresh", "selDeviceChoices", "devName", "devNameHolder", "mediaTitle", "mediaSubTitle", "mediaArtist", "mediaAlbum", "mediaBitRate", "mediaBitDepth", "mediaSampleRate", "mediaQualityIdent", "devVol", "btnRepeat", "btnShuffle", "progressPlayed", "progressLeft", "progressPercent", "mediaSource", "albumArt", "bgAlbumArtBlur", "btnDevSelect", "oDeviceList", "btnDevPreset", "oPresetList", "btnDevVolume", "rVolume", "mediaLyrics", "lyricPrev", "lyricCurrent", "lyricNext", "lyricAfter", "alerts"],
+    aDeviceUI: ["btnPrev", "btnPlay", "btnNext", "btnRefresh", "selDeviceChoices", "devName", "devNameHolder", "mediaTitle", "mediaSubTitle", "mediaArtist", "mediaAlbum", "mediaBitRate", "mediaBitDepth", "mediaSampleRate", "mediaQualityIdent", "devVol", "btnRepeat", "btnShuffle", "progressPlayed", "progressLeft", "progressPercent", "mediaSource", "albumArt", "bgAlbumArtBlur", "btnDevSelect", "oDeviceList", "btnDevPreset", "oPresetList", "btnDevVolume", "rVolume", "mediaLyrics", "lyricPrev", "lyricCurrent", "lyricNext", "lyricAfter", "alerts", "sleeveArt"],
     // Server actions to be used in the app
     aServerUI: ["btnReboot", "btnUpdate", "btnShutdown", "btnReloadUI", "sServerUrlHostname", "sServerUrlIP", "sServerVersion", "sClientVersion", "chkLyricsEnabled", "lyricsCacheSize", "btnClearLyricsCache", "lyricsOffsetMs", "selArtFit", "btnReloadAll", "chkPureArt"],
     // Default timeout for alerts in ms
-    alertTimeoutMs: 5000
+    alertTimeoutMs: 5000,
+    // How long each sleeve scan stays up before the panel moves to the next
+    sleeveCycleMs: 30000
 };
 
 // Data placeholders.
@@ -42,7 +44,11 @@ WNP.d = {
     albumArtTarget: null, // Desired album art URI, used to retry on load errors
     albumArtRetries: 0, // Album art load-error retry counter
     prevAlbumArtKey: null, // Last artwork actually applied, ignoring cache-busting
-    infoTimer: null // Timer that fades the track details away again in pure art mode
+    infoTimer: null, // Timer that fades the track details away again in pure art mode
+    sleeveKey: null, // Album the sleeve panel was last asked about
+    sleeveImages: [], // Scans of the physical package for that album
+    sleeveIndex: 0, // Which of those is on screen
+    sleeveTimer: null // Timer that moves the sleeve panel on to the next scan
 };
 
 // Reference placeholders.
@@ -644,6 +650,18 @@ WNP.setSocketDefinitions = function () {
             WNP.setAlbumArt(albumArtUri);
         }
 
+        // Sleeve mode: look up scans of the physical package. Keyed on the
+        // album rather than the track, and a no-op on the inputs that carry no
+        // metadata at all, such as Line In.
+        if (WNP.isSleeveMode()) {
+            if (sourcePhoto) {
+                WNP.d.sleeveKey = null;
+                WNP.clearSleeve();
+            } else {
+                WNP.requestSleeve(WNP.r.mediaArtist.innerText, WNP.r.mediaAlbum.innerText);
+            }
+        }
+
         // Device volume
         WNP.r.devVol.innerText = (msg.CurrentVolume) ? msg.CurrentVolume : "-"; // Set the volume on the UI
         if (WNP.r.rVolume && (WNP.r.rVolume.value !== WNP.r.devVol.innerText)) { // If volume on the range slider is different then update the range input value
@@ -718,6 +736,24 @@ WNP.setSocketDefinitions = function () {
     });
 
     // On lyrics cache stats
+    socket.on("sleeve-get", function (msg) {
+        console.log("IO: sleeve-get", msg && msg.status, msg && msg.images ? msg.images.length : 0);
+
+        // The lookup is slow enough that the album can change while it runs,
+        // so only take an answer that is about what is playing now.
+        if (!msg || msg.key !== WNP.d.sleeveKey) {
+            return;
+        }
+        if (msg.status !== "ok" || !msg.images || !msg.images.length) {
+            WNP.clearSleeve();
+            return;
+        }
+
+        WNP.d.sleeveImages = msg.images;
+        WNP.d.sleeveIndex = 0;
+        WNP.showSleeveImage(0);
+    });
+
     socket.on("lyrics-cache-stats", function (msg) {
         // console.log("IO: lyrics-cache-stats", msg);
         WNP.r.lyricsCacheSize.value = (msg && msg.count) ? `${msg.count} items cached` : "no items cached";
@@ -1220,6 +1256,153 @@ WNP.syncBackdrop = function () {
     }
 
     WNP.r.bgAlbumArtBlur.style.backgroundImage = "url('" + (thumb || src) + "')";
+};
+
+/**
+ * Whether this screen is Sleeve mode.
+ * @returns {boolean}
+ */
+WNP.isSleeveMode = function () {
+    var appEl = document.getElementById("wnpApp");
+    return !!(appEl && appEl.classList.contains("sleeve-mode"));
+};
+
+/**
+ * Build the album key the server answers sleeve lookups for.
+ * Must match the server's normalisation, since replies are matched on it.
+ * @param {string} artist
+ * @param {string} album
+ * @returns {string}
+ */
+WNP.sleeveKeyFor = function (artist, album) {
+    var clean = function (value) {
+        return String(value || "")
+            .toLowerCase()
+            .replace(/[\u2018\u2019\u201c\u201d]/g, "")
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "")
+            .slice(0, 80);
+    };
+    return clean(artist) + "_" + clean(album);
+};
+
+/**
+ * Ask the server for scans of the physical package for this album.
+ * Only fires on an actual album change: a lookup costs rate-limited external
+ * requests, and consecutive tracks from one record are the common case.
+ * @param {string} artist
+ * @param {string} album
+ * @returns {undefined}
+ */
+WNP.requestSleeve = function (artist, album) {
+    if (!artist || !album) {
+        WNP.d.sleeveKey = null;
+        WNP.clearSleeve();
+        return;
+    }
+
+    var key = WNP.sleeveKeyFor(artist, album);
+    if (key === WNP.d.sleeveKey) {
+        return;
+    }
+
+    WNP.d.sleeveKey = key;
+    WNP.clearSleeve();
+    socket.emit("sleeve-get", { artist: artist, album: album });
+};
+
+/**
+ * Empty the sleeve panel and stop it cycling.
+ * The layout collapses to the front cover alone, which is the right answer
+ * for the albums nobody has scanned the back of.
+ * @returns {undefined}
+ */
+WNP.clearSleeve = function () {
+    if (WNP.d.sleeveTimer) {
+        clearTimeout(WNP.d.sleeveTimer);
+        WNP.d.sleeveTimer = null;
+    }
+    WNP.d.sleeveImages = [];
+    WNP.d.sleeveIndex = 0;
+    var appEl = document.getElementById("wnpApp");
+    if (appEl) {
+        appEl.classList.remove("has-sleeve");
+    }
+    if (WNP.r.sleeveArt) {
+        WNP.r.sleeveArt.removeAttribute("src");
+    }
+};
+
+/**
+ * Show one of the scans, fading the previous one out.
+ * The swap waits on the load event so a slow archive fetch shows the old
+ * image rather than a gap.
+ * @param {number} index
+ * @returns {undefined}
+ */
+WNP.showSleeveImage = function (index) {
+    var images = WNP.d.sleeveImages;
+    if (!WNP.r.sleeveArt || !images.length) {
+        return;
+    }
+
+    var image = images[index % images.length];
+    // A stable cache-buster: the point is to go through the proxy, not to
+    // defeat the browser cache when the panel cycles back round.
+    var uri = WNP.checkAlbumArtURI(image.url, WNP.d.sleeveKey || "sleeve");
+
+    var loader = new Image();
+    loader.onload = function () {
+        if (!WNP.d.sleeveImages.length) {
+            return; // Album changed while this was loading.
+        }
+        var appEl = document.getElementById("wnpApp");
+        WNP.r.sleeveArt.src = uri;
+        if (appEl) {
+            appEl.classList.add("has-sleeve");
+        }
+        WNP.scheduleSleeveCycle();
+    };
+    loader.onerror = function () {
+        // Drop the one that failed and move on rather than stalling here.
+        WNP.d.sleeveImages = WNP.d.sleeveImages.filter(function (i) {
+            return i.url !== image.url;
+        });
+        if (WNP.d.sleeveImages.length) {
+            WNP.showSleeveImage(index);
+        } else {
+            WNP.clearSleeve();
+        }
+    };
+    loader.src = uri;
+};
+
+/**
+ * Queue the next scan, if there is more than one to show.
+ * @returns {undefined}
+ */
+WNP.scheduleSleeveCycle = function () {
+    if (WNP.d.sleeveTimer) {
+        clearTimeout(WNP.d.sleeveTimer);
+        WNP.d.sleeveTimer = null;
+    }
+    if (WNP.d.sleeveImages.length < 2) {
+        return;
+    }
+    WNP.d.sleeveTimer = setTimeout(function () {
+        WNP.d.sleeveIndex = (WNP.d.sleeveIndex + 1) % WNP.d.sleeveImages.length;
+        WNP.showSleeveImage(WNP.d.sleeveIndex);
+    }, WNP.s.sleeveCycleMs);
+};
+
+/**
+ * Handle a sleeve scan failing once it is already on screen.
+ * @returns {undefined}
+ */
+WNP.onSleeveArtError = function () {
+    if (WNP.r.sleeveArt && WNP.r.sleeveArt.getAttribute("src")) {
+        WNP.clearSleeve();
+    }
 };
 
 /**

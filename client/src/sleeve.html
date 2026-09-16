@@ -2,7 +2,7 @@
 <html lang="en">
 
 <head>
-    <title>WiiM Now Playing (Art Mode)</title>
+    <title>WiiM Now Playing (Sleeve Mode)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 
     <link rel="apple-touch-icon" sizes="180x180" href="./favicon/apple-touch-icon.png">
@@ -19,7 +19,7 @@
 
 <body>
 
-    <div id="wnpApp" class="tv-mode art-mode">
+    <div id="wnpApp" class="tv-mode sleeve-mode">
 
         <div id="wnpBgAlbumArt">
             <div id="bgAlbumArtBlur"></div>
@@ -52,6 +52,15 @@
                 <div class="rounded">
                     <img id="albumArt" class="rounded" src="img/fake-album-1.jpg"
                         onerror="WNP.onAlbumArtError()" alt="Album art">
+                </div>
+            </div>
+
+            <!-- Scans of the physical package (back cover, disc, booklet),
+                 looked up per album; hidden when nothing has been scanned. -->
+            <div class="wnpSleeveArt">
+                <div class="rounded">
+                    <img id="sleeveArt" class="rounded" alt="Sleeve artwork"
+                        onerror="WNP.onSleeveArtError()">
                 </div>
             </div>
 
@@ -102,7 +111,7 @@
                         <!-- Top right menu options -->
                         <div class="btn-group secondary">
                             <!-- Display mode cycle -->
-                            <a id="wnpTVMode" type="button" class="btn btn-outline-light" href="/sleeve" title="Switch to Sleeve mode">
+                            <a id="wnpTVMode" type="button" class="btn btn-outline-light" href="/" title="Switch to Controller">
                                 <i class="bi bi-sliders"></i>
                             </a>
                             <!-- Settings button -->

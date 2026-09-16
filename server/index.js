@@ -31,6 +31,7 @@ const sockets = require("./lib/sockets.js"); // Sockets.io functionality
 const shell = require("./lib/shell.js"); // Shell command functionality
 const lib = require("./lib/lib.js"); // Generic functionality
 const lyrics = require("./lib/lyrics.js"); // Lyrics functionality
+const sleeve = require("./lib/sleeve.js"); // Sleeve artwork functionality
 const lyricsCache = require("./lib/lyricsCache.js");
 const log = require("debug")("index"); // See the documentation on debugging
 
@@ -144,6 +145,9 @@ app.get("/tv", limiter, function (req, res) { // TV Mode
 app.get("/art", limiter, function (req, res) { // Art Mode
     res.sendFile(__dirname + "/public/art.html");
 });
+app.get("/sleeve", limiter, function (req, res) { // Sleeve Mode
+    res.sendFile(__dirname + "/public/sleeve.html");
+});
 app.get("/debug", limiter, function (req, res) { // Debug page
     res.sendFile(__dirname + "/public/debug.html");
 });
@@ -153,6 +157,10 @@ app.get("/res", limiter, function (req, res) { // Resolution test page
 app.get("/assets", limiter, function (req, res) { // Assets test page
     res.sendFile(__dirname + "/public/assets.html");
 });
+
+// The Cover Art Archive answers every image request with a redirect on to
+// archive.org, which redirects again to whichever node holds the file.
+const MAX_ART_REDIRECTS = 4;
 
 // Proxy https album art requests through this app, because this could be a https request with a self signed certificate.
 // If the device does not have a valid (self-signed) certificate the browser cannot load the album art, hence we ignore the self signed certificate.
@@ -180,9 +188,48 @@ app.get("/proxy-art", limiter, function (req, res) {
         // album art intermittently falls back to the generic image.
     };
     let identified = false;
+    let request = null;
+
+    /**
+     * Fetch the artwork, following redirects.
+     * The Cover Art Archive never serves an image itself - every URL is a
+     * redirect on to archive.org - so Sleeve mode artwork only arrives if this
+     * proxy follows them.
+     * @param {URL} url - Where to fetch from.
+     * @param {number} hops - Redirects already followed.
+     * @returns {undefined}
+     */
+    const fetchUpstream = (url, hops) => {
 
     // Make the request to the target URL
-    const request = https.get(targetUrl.href, options, (resp) => {
+    request = https.get(url.href, options, (resp) => {
+
+        // Follow a redirect rather than handing the client the 307 body.
+        if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+            resp.resume();
+            if (hops >= MAX_ART_REDIRECTS) {
+                if (!res.writableEnded) { res.status(502).send("<div>Too Many Redirects</div>"); }
+                return;
+            }
+            let next;
+            try {
+                next = new URL(resp.headers.location, url);
+            } catch (e) {
+                if (!res.writableEnded) { res.status(502).send("<div>Bad Redirect</div>"); }
+                return;
+            }
+            // Upgrade rather than follow in the clear: the archive redirects
+            // over http, and this proxy only speaks https by design.
+            if (next.protocol === "http:") {
+                next.protocol = "https:";
+            }
+            if (next.protocol !== "https:") {
+                if (!res.writableEnded) { res.status(502).send("<div>Bad Redirect</div>"); }
+                return;
+            }
+            fetchUpstream(next, hops + 1);
+            return;
+        }
 
         // What content type do we have?
         let contentType = resp.headers['content-type'];
@@ -268,16 +315,6 @@ app.get("/proxy-art", limiter, function (req, res) {
 
     })
 
-    // Abort the upstream fetch if the client disconnects before we finish.
-    // The browser swaps the album-art <img> on every track change, which would
-    // otherwise leave the connection to the art CDN (e.g. Spotify's i.scdn.co)
-    // open. Over time these orphaned sockets accumulate until the process can no
-    // longer make new outbound requests, at which point album art silently fails
-    // for every track until the server is restarted.
-    res.on('close', () => {
-        if (!res.writableFinished) request.destroy();
-    });
-
     // Don't let a hung upstream connection linger forever; free it after a while.
     request.setTimeout(8000, () => {
         request.destroy(new Error("Album art proxy timeout"));
@@ -292,6 +329,20 @@ app.get("/proxy-art", limiter, function (req, res) {
             res.status(404).send("<div>404 Not Found</div>");
         }
     });
+
+    };
+
+    // Abort the upstream fetch if the client disconnects before we finish.
+    // The browser swaps the album-art <img> on every track change, which would
+    // otherwise leave the connection to the art CDN (e.g. Spotify's i.scdn.co)
+    // open. Over time these orphaned sockets accumulate until the process can no
+    // longer make new outbound requests, at which point album art silently fails
+    // for every track until the server is restarted.
+    res.on('close', () => {
+        if (!res.writableFinished && request) { request.destroy(); }
+    });
+
+    fetchUpstream(targetUrl, 0);
 
 });
 
@@ -412,6 +463,36 @@ io.on("connection", (socket) => {
         if (serverSettings.features.lyrics.enabled && deviceInfo.lyrics) {
             socket.emit("lyrics-get", deviceInfo.lyrics);
             lyrics.getLyricsCacheStats(io);
+        }
+    });
+
+    /**
+     * Listener for sleeve artwork get.
+     * Looks up scans of the physical package - back cover, disc, booklet - for
+     * an album. Client driven rather than pushed on every track, because only
+     * Sleeve mode wants it and a lookup costs rate-limited external requests.
+     * @param {object} msg - Expected to carry artist and album.
+     * @returns {undefined}
+     */
+    socket.on("sleeve-get", async (msg) => {
+        log("Socket event", "sleeve-get", msg && msg.artist, "-", msg && msg.album);
+        const artist = (msg && msg.artist) ? String(msg.artist) : "";
+        const album = (msg && msg.album) ? String(msg.album) : "";
+
+        if (!artist || !album) {
+            socket.emit("sleeve-get", { status: "no-metadata", images: [] });
+            return;
+        }
+
+        try {
+            const result = await sleeve.getSleeveArt(artist, album);
+            // The album may well have changed while we were waiting on the
+            // network, so the reply carries the key it answers for and the
+            // client decides whether it is still relevant.
+            socket.emit("sleeve-get", result);
+        } catch (error) {
+            log("Sleeve lookup error:", error.message);
+            socket.emit("sleeve-get", { status: "error", key: sleeve.buildKey(artist, album), images: [] });
         }
     });
 

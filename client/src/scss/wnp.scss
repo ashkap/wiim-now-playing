@@ -1188,6 +1188,280 @@
         }
 
         // ----------------------------------------------------------
+        // Sleeve mode: the record as an object. Front cover on the left, a
+        // scan of the physical package on the right - back cover where one
+        // exists, otherwise the disc face or a booklet page. Roughly a
+        // quarter of albums have nothing scanned at all, so the layout has to
+        // collapse to a single cover without looking broken.
+        &.sleeve-mode {
+
+            // Same backdrop as Art mode: blurred on a canvas by the client,
+            // because the Pi drops a large CSS blur over a full-screen layer.
+            #wnpBgAlbumArt #bgAlbumArtBlur {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                transform: scale(1.35);
+                filter: blur(14px) saturate(1.5) brightness(0.72);
+            }
+
+            @media (orientation: landscape) {
+
+                .wnpContainer {
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: flex-end;
+                    padding: 0 4vw 1.2vh;
+                }
+
+                // Gradient so the caption strip stays legible over any artwork.
+                .wnpContainer::after {
+                    content: "";
+                    position: absolute;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    height: 32%;
+                    z-index: 2;
+                    pointer-events: none;
+                    background: linear-gradient(to top,
+                            rgba(0, 0, 0, 0.92) 0%,
+                            rgba(0, 0, 0, 0.68) 40%,
+                            rgba(0, 0, 0, 0) 100%);
+                }
+
+                // --- The two panels ---
+                // Each takes half the stage and the image is fitted inside it
+                // rather than filling it, because sleeve scans are not reliably
+                // square: a vinyl back is, a CD tray inlay is far wider.
+                .wnpAlbumArt {
+                    position: absolute;
+                    top: 3.5vh;
+                    bottom: 22vh;
+                    left: 0;
+                    right: 50%;
+                    padding: 0 1.4vw;
+                    z-index: 1;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: right 0.9s ease;
+                }
+
+                .wnpSleeveArt {
+                    position: absolute;
+                    top: 3.5vh;
+                    bottom: 22vh;
+                    left: 50%;
+                    right: 0;
+                    padding: 0 1.4vw;
+                    z-index: 1;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    opacity: 0;
+                    transition: opacity 1.4s ease;
+                }
+
+                .wnpAlbumArt>div,
+                .wnpSleeveArt>div {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 100%;
+                    height: 100%;
+                    max-width: none;
+                    max-height: none;
+                    border-radius: 0;
+                    box-shadow: none;
+                    background: none;
+                }
+
+                // Addressed by id: the base rules for #albumArt set a
+                // cover fit, and a class selector cannot outrank them.
+                #albumArt,
+                #sleeveArt {
+                    display: block;
+                    width: auto;
+                    height: auto;
+                    max-width: 100%;
+                    max-height: 100%;
+                    object-fit: contain;
+                    border-radius: 0 !important;
+                    // A real edge and a shadow, so each panel reads as a
+                    // physical thing lying on the blurred backdrop.
+                    box-shadow:
+                        0 2vh 5vh rgba(0, 0, 0, 0.62),
+                        0 0 0 1px rgba(255, 255, 255, 0.07);
+                }
+
+                // --- Track info, bottom left ---
+                .wnpMediaInfo {
+                    position: relative;
+                    z-index: 3;
+                    display: block;
+                    padding: 0 0 5.4vh;
+                    overflow: visible;
+
+                    // Not wanted in this mode
+                    #mediaLyrics,
+                    div:has(>#mediaSubTitle) {
+                        display: none;
+                    }
+
+                    #mediaTitle {
+                        font-size: clamp(1.8rem, 2.9vw, 3rem);
+                        font-weight: 800;
+                        line-height: 1.05;
+                        letter-spacing: -0.01em;
+                        margin: 0 0 0.6vh;
+                        padding-right: 30vw;
+                        display: -webkit-box;
+                        -webkit-line-clamp: 2;
+                        -webkit-box-orient: vertical;
+                        overflow: hidden;
+                        text-shadow: 0 2px 18px rgba(0, 0, 0, 0.85);
+                    }
+
+                    #mediaArtist {
+                        font-size: clamp(1.1rem, 1.6vw, 1.65rem);
+                        font-weight: 500;
+                        letter-spacing: 0.03em;
+                        margin: 0 0 0.4vh;
+                        padding-right: 30vw;
+                        color: rgba(255, 255, 255, 0.96);
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85);
+                    }
+
+                    div:has(>#mediaAlbum) {
+                        font-size: clamp(0.9rem, 1.15vw, 1.15rem);
+                        letter-spacing: 0.10em;
+                        text-transform: uppercase;
+                        color: rgba(255, 255, 255, 0.62);
+                        margin: 0 !important;
+                        padding-right: 30vw;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+                    }
+
+                    // Source and quality frame the elapsed bar from the two
+                    // bottom corners, as they do in Art mode.
+                    #mediaSource {
+                        position: fixed;
+                        left: 4vw;
+                        right: auto;
+                        top: auto;
+                        bottom: 8.6vh;
+                        width: auto;
+                        text-align: left;
+
+                        img {
+                            max-height: 30px;
+                            margin-bottom: 0;
+                            filter: invert(1) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.9));
+                        }
+                    }
+
+                    #mediaQuality {
+                        position: fixed;
+                        right: 4vw;
+                        left: auto;
+                        top: auto;
+                        bottom: 8.6vh;
+                        width: auto;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: flex-end;
+                        gap: 0.1em;
+                        margin: 0;
+                        padding: 0.62em 0 0;
+                        background: none;
+                        border: none;
+                        border-top: 2px solid rgba(255, 255, 255, 0.32);
+                        border-radius: 0;
+                        text-align: right;
+                        line-height: 1.2;
+                        font-size: clamp(1.05rem, 1.35vw, 1.5rem);
+                        font-weight: 600;
+                        letter-spacing: 0.17em;
+                        color: rgba(255, 255, 255, 0.76) !important;
+                        text-shadow:
+                            0 2px 10px rgba(0, 0, 0, 0.95),
+                            0 0 28px rgba(0, 0, 0, 0.75);
+
+                        #mediaQualityIdent.badge-outlined {
+                            align-self: stretch;
+                            text-align: right;
+                            font-size: clamp(1.5rem, 2.1vw, 2.3rem);
+                            font-weight: 800;
+                            letter-spacing: 0.05em;
+                            line-height: 1.1;
+                            padding: 0;
+                            margin: 0 0 0.24em;
+                            color: #fff !important;
+                        }
+
+                        i {
+                            display: none;
+                        }
+
+                        #mediaBitRate:empty,
+                        #mediaBitDepth:empty,
+                        #mediaSampleRate:empty {
+                            display: none;
+                        }
+                    }
+                }
+
+                // --- Progress, full width beneath the info ---
+                .wnpFooter {
+                    position: relative;
+                    z-index: 3;
+                    padding: 0;
+                    margin-top: 1.6vh;
+
+                    #progressPercent {
+                        height: 9px;
+                    }
+
+                    #progressPlayed,
+                    #progressLeft {
+                        padding-top: 0.9vh;
+                    }
+                }
+
+                // Volume and the mode buttons are pinned to the viewport: the
+                // footer is positioned here, which would otherwise become
+                // their containing block and drag them to the bottom corner.
+                #devVolumeHolder {
+                    position: fixed;
+                }
+
+                .btn-group.secondary {
+                    position: fixed;
+                }
+            }
+
+            // Nothing scanned for this album - two thirds of the time for
+            // anything recent. The cover takes the whole stage rather than
+            // sitting off to one side of an empty half.
+            &:not(.has-sleeve) .wnpAlbumArt {
+                right: 0;
+            }
+
+            &.has-sleeve .wnpSleeveArt {
+                opacity: 1;
+            }
+        }
+
+        // ----------------------------------------------------------
         // Line In / Optical (a turntable, a CD player): these inputs carry no
         // title, artist, artwork or duration, so show a photo of the source
         // gear full-screen with only the clock, volume and quality pill over it.

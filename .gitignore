@@ -132,3 +132,6 @@ docs/.vitepress/dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Sleeve artwork lookups, cached to disk
+server/cache/
