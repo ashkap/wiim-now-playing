@@ -1284,10 +1284,14 @@
                 #albumArt,
                 #sleeveArt {
                     display: block;
+                    // Sized off the panel height rather than left at natural
+                    // size: archive scans vary wildly, and a 600px back cover
+                    // next to a 1000px front looked like a mistake rather than
+                    // a pair. Width follows the aspect ratio, so the two panels
+                    // match in height whatever shape they are.
+                    height: 100%;
                     width: auto;
-                    height: auto;
                     max-width: 100%;
-                    max-height: 100%;
                     object-fit: contain;
                     border-radius: 0 !important;
                     // A real edge and a shadow, so each panel reads as a
