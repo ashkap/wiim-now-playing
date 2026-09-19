@@ -36,6 +36,9 @@ if [ -n "$WAYLAND_DISPLAY" ] && command -v wlopm >/dev/null; then
     STACK="wayland"
     screen_off() { wlopm --off '*'; }
     screen_wake() { wlopm --on '*'; }
+    # Prints "on", "off", or nothing if the state cannot be read.
+    screen_state() { wlopm 2>/dev/null | grep -qE ' on$' && echo on || \
+                     { wlopm 2>/dev/null | grep -qE ' off$' && echo off; }; }
 elif command -v xset >/dev/null; then
     STACK="x11"
     export DISPLAY="${DISPLAY:-:0}"
@@ -46,6 +49,7 @@ elif command -v xset >/dev/null; then
     xset dpms 0 0 0   # disable DPMS timers; we use 'dpms force' explicitly
     screen_off() { xset dpms force off; }
     screen_wake() { xset dpms force on; }
+    screen_state() { xset q 2>/dev/null | sed -n 's/.*Monitor is \(On\|Off\).*/\1/p' | tr 'A-Z' 'a-z'; }
 else
     echo "WNP screen-sleep: neither wlopm (Wayland) nor xset (X11) available, exiting"
     exit 1
@@ -94,6 +98,21 @@ while true; do
         echo "WNP screen-sleep: no WiiM IP found (yet), retrying..."
         sleep 10
         continue
+    fi
+
+    # Trust the display, not our own memory of what we last did. Anything
+    # else on the system can turn the screen on - a nudged mouse, a hotplug,
+    # a compositor restart - and a script that only remembers its own actions
+    # never notices, so it never puts the screen back to sleep. That leaves
+    # the monitor on indefinitely, which is exactly the failure this is for.
+    actual=$(screen_state)
+    if [ "$actual" = "on" ] && [ "$screen_on" -eq 0 ]; then
+        echo "WNP screen-sleep: screen was turned on by something else, restarting the idle countdown"
+        screen_on=1
+        idle_for=0   # Give it the full idle window rather than snapping straight off.
+    elif [ "$actual" = "off" ] && [ "$screen_on" -eq 1 ]; then
+        echo "WNP screen-sleep: screen was turned off by something else"
+        screen_on=0
     fi
 
     state=$(player_state "$ip")
