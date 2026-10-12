@@ -30,6 +30,12 @@ const MB_MIN_INTERVAL_MS = 1200;
 const MB_RETRIES = 3;
 const MB_BACKOFF_MS = 3000;
 
+// The archive's JSON is served from the same address as MusicBrainz, so its
+// requests go through the same queue and spacing. A failed one is retried a
+// couple of times; archive.org is slow and occasionally drops a request.
+const CAA_RETRIES = 2;
+const CAA_BACKOFF_MS = 2000;
+
 // The archive redirects its JSON and its images on to archive.org.
 const MAX_REDIRECTS = 4;
 
@@ -51,6 +57,12 @@ const MAX_PER_TYPE_DEFAULT = 1;
 // not what is shown for one already found, so the successful entries stay
 // valid and only the misses are worth discarding.
 const CACHE_FORMAT = 2;
+
+// Bump when a fix means earlier misses can no longer be trusted. Misses
+// recorded before version 2 could not tell "nothing scanned" from "the
+// request failed", so plenty of albums with full packages were cached as
+// having none. Those are looked up again the next time they play.
+const MISS_VERSION = 2;
 
 // The printed parts of the package, in the order they are worth looking at.
 // An allow-list rather than a list of things to drop: the archive has types
@@ -82,9 +94,18 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * @param {string} url
  * @param {number} timeoutMs
  * @param {number} hops - Redirects already followed.
- * @returns {Promise<object|null>}
+ * @param {Array<string>|null} failures - If given, why a request failed is
+ *     added to it, so a lookup can report what went wrong.
+ * @returns {Promise<object|null>} Parsed body, { notFound: true } for a 404,
+ *     or null when the request failed.
  */
-const fetchJson = (url, timeoutMs = 15000, hops = 0) => {
+const fetchJson = (url, timeoutMs = 15000, hops = 0, failures = null) => {
+    const fail = (reason) => {
+        if (failures) {
+            failures.push(reason);
+        }
+        return null;
+    };
     return new Promise((resolve) => {
         const options = {
             family: 4,
@@ -106,7 +127,7 @@ const fetchJson = (url, timeoutMs = 15000, hops = 0) => {
             if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
                 resp.resume();
                 if (hops >= MAX_REDIRECTS) {
-                    resolve(null);
+                    resolve(fail("too many redirects"));
                     return;
                 }
                 // Upgrade rather than follow in the clear: the archive answers
@@ -115,13 +136,13 @@ const fetchJson = (url, timeoutMs = 15000, hops = 0) => {
                 if (next.protocol === "http:") {
                     next.protocol = "https:";
                 }
-                resolve(fetchJson(next.href, timeoutMs, hops + 1));
+                resolve(fetchJson(next.href, timeoutMs, hops + 1, failures));
                 return;
             }
 
             if (resp.statusCode < 200 || resp.statusCode >= 300) {
                 resp.resume();
-                resolve(null);
+                resolve(fail("HTTP " + resp.statusCode));
                 return;
             }
 
@@ -132,59 +153,41 @@ const fetchJson = (url, timeoutMs = 15000, hops = 0) => {
                 try {
                     resolve(JSON.parse(body));
                 } catch (err) {
-                    resolve(null);
+                    resolve(fail("unreadable response"));
                 }
             });
         });
 
         request.setTimeout(timeoutMs, () => {
             request.destroy();
-            resolve(null);
+            resolve(fail("timed out"));
         });
-        request.on("error", () => resolve(null));
+        request.on("error", (err) => resolve(fail(err.code || err.message || "network error")));
     });
 };
 
-// MusicBrainz requests are serialised through this chain so the whole server
-// makes at most one per MB_MIN_INTERVAL_MS, no matter how many screens ask.
+// MusicBrainz and archive requests are serialised through this chain so the
+// whole server makes at most one per MB_MIN_INTERVAL_MS, no matter how many
+// screens ask. The two share it because they share an address: the archive's
+// JSON is answered by MusicBrainz's own servers before it redirects.
 let mbChain = Promise.resolve();
 let mbLastAt = 0;
 
 /**
- * Queue a MusicBrainz request, spacing it from the previous one.
+ * Run a task on the shared request chain.
  * The chain deliberately never rejects: one failed lookup must not break
  * every lookup queued behind it.
- * @param {string} path - Path and query below the ws/2 root.
- * @returns {Promise<object|null>}
+ * @param {Function} task - Async function; its result is passed through.
+ * @returns {Promise<*>}
  */
-const musicBrainz = (path) => {
+const enqueue = (task) => {
     return new Promise((resolve) => {
         mbChain = mbChain.then(async () => {
             let result = null;
-            for (let attempt = 0; attempt <= MB_RETRIES; attempt++) {
-                const wait = MB_MIN_INTERVAL_MS - (Date.now() - mbLastAt);
-                if (wait > 0) {
-                    await sleep(wait);
-                }
-
-                const body = await fetchJson(MB_HOST + path);
-                mbLastAt = Date.now();
-
-                // MusicBrainz signals throttling with a 200 and an error body,
-                // so an empty result is not by itself evidence of no match.
-                if (body && !body.error) {
-                    result = body;
-                    break;
-                }
-                if (body && body.error) {
-                    log("MusicBrainz busy, backing off:", body.error);
-                }
-                // A busy MusicBrainz stays busy for longer than the polite
-                // interval, so back off hard rather than burning the retries.
-                // No point waiting after the last attempt.
-                if (attempt < MB_RETRIES) {
-                    await sleep(MB_BACKOFF_MS * (attempt + 1));
-                }
+            try {
+                result = await task();
+            } catch (err) {
+                result = null;
             }
             resolve(result);
         });
@@ -192,16 +195,81 @@ const musicBrainz = (path) => {
 };
 
 /**
- * Ask the Cover Art Archive what has been scanned for a release.
- * @param {string} mbid
- * @returns {Promise<Array<object>>} Raw image entries, empty if none.
+ * Fetch, keeping the polite interval from the previous request.
+ * Only call from inside an enqueued task, so the spacing holds server-wide.
+ * @param {string} url
+ * @param {Array<string>|null} failures
+ * @returns {Promise<object|null>}
  */
-const coverArtFor = async (mbid) => {
-    const body = await fetchJson(CAA_HOST + "release/" + encodeURIComponent(mbid));
-    if (!body || body.notFound || !Array.isArray(body.images)) {
-        return [];
+const spacedFetch = async (url, failures = null) => {
+    const wait = MB_MIN_INTERVAL_MS - (Date.now() - mbLastAt);
+    if (wait > 0) {
+        await sleep(wait);
     }
-    return body.images;
+    const body = await fetchJson(url, 15000, 0, failures);
+    mbLastAt = Date.now();
+    return body;
+};
+
+/**
+ * Queue a MusicBrainz request, spacing it from the previous one.
+ * The whole retry loop runs inside one queued task, so a busy MusicBrainz
+ * holds every other request back while it recovers rather than being hit by
+ * the next one in line.
+ * @param {string} path - Path and query below the ws/2 root.
+ * @returns {Promise<object|null>} The body, or null if every attempt failed.
+ */
+const musicBrainz = (path) => {
+    return enqueue(async () => {
+        for (let attempt = 0; attempt <= MB_RETRIES; attempt++) {
+            const body = await spacedFetch(MB_HOST + path);
+
+            // MusicBrainz signals throttling with a 200 and an error body,
+            // so an empty result is not by itself evidence of no match.
+            if (body && !body.error) {
+                return body;
+            }
+            if (body && body.error) {
+                log("MusicBrainz busy, backing off:", body.error);
+            }
+            // A busy MusicBrainz stays busy for longer than the polite
+            // interval, so back off hard rather than burning the retries.
+            // No point waiting after the last attempt.
+            if (attempt < MB_RETRIES) {
+                await sleep(MB_BACKOFF_MS * (attempt + 1));
+            }
+        }
+        return null;
+    });
+};
+
+/**
+ * Ask the Cover Art Archive what has been scanned for a release.
+ *
+ * "Nothing scanned" and "could not ask" are different answers and must stay
+ * that way. Treating a failed request as an empty release is what had albums
+ * with full packages cached as having nothing, for a fortnight at a time.
+ * @param {string} mbid
+ * @param {Array<string>|null} failures - Collects why attempts failed.
+ * @returns {Promise<Array<object>|null>} Raw image entries (empty if the
+ *     release has none), or null if the archive could not be asked.
+ */
+const coverArtFor = (mbid, failures = null) => {
+    return enqueue(async () => {
+        for (let attempt = 0; attempt <= CAA_RETRIES; attempt++) {
+            const body = await spacedFetch(CAA_HOST + "release/" + encodeURIComponent(mbid), failures);
+            if (body && body.notFound) {
+                return [];
+            }
+            if (body) {
+                return Array.isArray(body.images) ? body.images : [];
+            }
+            if (attempt < CAA_RETRIES) {
+                await sleep(CAA_BACKOFF_MS * (attempt + 1));
+            }
+        }
+        return null;
+    });
 };
 
 /**
@@ -394,22 +462,44 @@ const buildQueries = (artist, album) => {
  * match often has nothing scanned while a reissue of the same record has a
  * full set, and without it most albums come back empty.
  *
+ * Only a lookup that asked every question it meant to is allowed to conclude
+ * "nothing scanned". If a request fails part-way, the answer is incomplete:
+ * it is returned as an error (or as whatever was found so far) and not
+ * cached, so the client asks again rather than the album going without its
+ * sleeve for a fortnight.
+ *
  * @param {string} artist
  * @param {string} album
+ * @param {string} key - Cache key for this album.
  * @returns {Promise<object>} Always resolves; status says what was found.
  */
-const getSleeveArt = async (artist, album) => {
-    if (!artist || !album) {
-        return { status: "no-metadata", images: [] };
-    }
-
-    const key = buildKey(artist, album);
+const lookUp = async (artist, album, key) => {
     const cached = await sleeveCache.get(key);
-    if (cached && cached.format === CACHE_FORMAT) {
+    if (cached && cached.format === CACHE_FORMAT
+        && (cached.status !== "not-found" || cached.missVersion === MISS_VERSION)) {
         return cached;
     }
 
     log("Looking up sleeve artwork for:", artist, "-", album);
+
+    const failures = [];
+    const seen = [];
+    let best = null;
+    const miss = () => ({ status: "not-found", format: CACHE_FORMAT, missVersion: MISS_VERSION, key: key, images: [] });
+
+    /**
+     * Give up on an incomplete lookup without caching it.
+     * Whatever printed artwork turned up before the failure is still worth
+     * showing; it just is not trusted as the final answer.
+     * @param {string} where
+     * @returns {object}
+     */
+    const incomplete = (where) => {
+        const shown = best ? buildResult(best.release, best.images, key) : null;
+        console.warn("sleeve: " + key + ": " + where + " failed (" + failures.join(", ") + "); "
+            + (shown ? "showing a partial result" : "nothing to show") + ", not cached, will retry");
+        return shown || { status: "error", key: key, images: [] };
+    };
 
     // The exact title first, then a relaxed one with the edition wrapper and
     // any featured artists removed. Libraries name records more specifically
@@ -423,7 +513,9 @@ const getSleeveArt = async (artist, album) => {
         // Caching that as a miss would keep the screen empty for a fortnight
         // over one throttled lookup, so it is returned uncached and retried.
         if (!search) {
+            failures.push("no answer from MusicBrainz");
             log("Lookup failed (no answer from MusicBrainz) for", key);
+            console.warn("sleeve: " + key + ": MusicBrainz search failed; not cached, will retry");
             return { status: "error", key: key, images: [] };
         }
         releases = Array.isArray(search.releases) ? search.releases : [];
@@ -434,18 +526,15 @@ const getSleeveArt = async (artist, album) => {
     }
 
     if (!releases.length) {
-        const miss = { status: "not-found", format: CACHE_FORMAT, key: key, images: [] };
-        await sleeveCache.set(key, miss);
-        return miss;
+        const none = miss();
+        await sleeveCache.set(key, none);
+        return none;
     }
 
     // Track the best pressing seen rather than taking the first acceptable
     // one. Plenty of releases have a lone back cover scanned while another
     // pressing of the same record has the whole package, and for this mode
     // the richer one is the better answer.
-    const seen = [];
-    let best = null;
-
     const consider = (release, images) => {
         const usable = orderImages(images).length;
         if (!usable) {
@@ -467,7 +556,10 @@ const getSleeveArt = async (artist, album) => {
             continue;
         }
         seen.push(release.id);
-        const images = await coverArtFor(release.id);
+        const images = await coverArtFor(release.id, failures);
+        if (images === null) {
+            return incomplete("archive request for " + release.id);
+        }
         log("  candidate", release.id, "->", images.length, "images");
         if (consider(release, images)) {
             const found = buildResult(best.release, best.images, key);
@@ -500,7 +592,12 @@ const getSleeveArt = async (artist, album) => {
         const group = await musicBrainz(
             "release?release-group=" + encodeURIComponent(groupId) + "&fmt=json&limit=25"
         );
-        const siblings = (group && Array.isArray(group.releases)) ? group.releases : [];
+        // Not knowing a group's pressings is not the same as it having none.
+        if (!group) {
+            failures.push("no answer from MusicBrainz");
+            return incomplete("listing the pressings of " + groupId);
+        }
+        const siblings = Array.isArray(group.releases) ? group.releases : [];
         log("  release group", groupId, "->", siblings.length, "other pressings");
         for (const sibling of siblings) {
             if (!sibling.id || seen.indexOf(sibling.id) !== -1) {
@@ -510,7 +607,10 @@ const getSleeveArt = async (artist, album) => {
                 break;
             }
             checked++;
-            const images = await coverArtFor(sibling.id);
+            const images = await coverArtFor(sibling.id, failures);
+            if (images === null) {
+                return incomplete("archive request for " + sibling.id);
+            }
             log("  sibling", sibling.id, "->", images.length, "images, back:", hasBack(images));
             if (consider(sibling, images)) {
                 const found = buildResult(best.release, best.images, key);
@@ -528,9 +628,39 @@ const getSleeveArt = async (artist, album) => {
         return partial;
     }
 
-    const miss = { status: "not-found", format: CACHE_FORMAT, key: key, images: [] };
-    await sleeveCache.set(key, miss);
-    return miss;
+    // Every question was answered, and none of the answers had anything.
+    const none = miss();
+    await sleeveCache.set(key, none);
+    return none;
+};
+
+// Lookups in progress, by key. Several screens in Sleeve mode ask about the
+// same album at the same moment; they share one lookup rather than each
+// sending its own round of requests.
+const inFlight = new Map();
+
+/**
+ * Find scans of the physical package for an album, sharing a lookup already
+ * under way for the same one.
+ * @param {string} artist
+ * @param {string} album
+ * @returns {Promise<object>} Always resolves; status says what was found.
+ */
+const getSleeveArt = async (artist, album) => {
+    if (!artist || !album) {
+        return { status: "no-metadata", images: [] };
+    }
+
+    const key = buildKey(artist, album);
+    if (inFlight.has(key)) {
+        return inFlight.get(key);
+    }
+
+    const pending = lookUp(artist, album, key).finally(() => {
+        inFlight.delete(key);
+    });
+    inFlight.set(key, pending);
+    return pending;
 };
 
 module.exports = {

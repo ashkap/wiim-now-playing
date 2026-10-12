@@ -59,6 +59,12 @@ describe("Sleeve Module", () => {
         jest.clearAllMocks();
         sleeveCache.get.mockResolvedValue(null);
         sleeveCache.set.mockResolvedValue(undefined);
+        // Failed lookups report themselves on the console; keep test output clean.
+        jest.spyOn(console, "warn").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        console.warn.mockRestore();
     });
 
     describe("buildKey", () => {
@@ -305,6 +311,116 @@ describe("Sleeve Module", () => {
 
             expect(result.status).toBe("ok");
             expect(result.hasBack).toBe(true);
+        }, 20000);
+    });
+
+    describe("getSleeveArt when a request fails part-way", () => {
+        // A failed request is not an album with nothing scanned. Reading one as
+        // the other is what cached albums with full packages as empty, for a
+        // fortnight at a time.
+
+        test("an archive request that keeps failing is an error, not a miss", async () => {
+            queueResponses([
+                { body: { releases: [{ id: "r1", title: "Unplugged" }] } },
+                { status: 503 } // every archive attempt from here on
+            ]);
+
+            const result = await sleeve.getSleeveArt("Alice In Chains", "Unplugged");
+
+            expect(result.status).toBe("error");
+            expect(result.key).toBe("alice-in-chains_unplugged");
+            expect(sleeveCache.set).not.toHaveBeenCalled();
+            expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("HTTP 503"));
+        }, 30000);
+
+        test("retries an archive request that fails once", async () => {
+            queueResponses([
+                { body: { releases: [{ id: "r1", title: "Unplugged" }] } },
+                { status: 503 },
+                { body: { images: [image(["Front"], "f"), image(["Back"], "b")] } }
+            ]);
+
+            const result = await sleeve.getSleeveArt("Alice In Chains", "Unplugged");
+
+            expect(https.get).toHaveBeenCalledTimes(3);
+            expect(result.status).toBe("ok");
+            expect(result.hasBack).toBe(true);
+        }, 30000);
+
+        test("not being able to list the other pressings is an error, not a miss", async () => {
+            queueResponses([
+                { body: { releases: [{ id: "r1", title: "Unplugged", "release-group": { id: "g1" } }] } },
+                { body: { images: [image(["Front"], "f")] } }, // the match has only a front
+                { status: 503 } // and the group's pressings cannot be listed
+            ]);
+
+            const result = await sleeve.getSleeveArt("Alice In Chains", "Unplugged");
+
+            expect(result.status).toBe("error");
+            expect(sleeveCache.set).not.toHaveBeenCalled();
+        }, 45000);
+
+        test("shows what was found before a failure, without caching it", async () => {
+            // A booklet page is worth showing now, but a pressing that could not
+            // be checked might have had the whole package.
+            queueResponses([
+                { body: { releases: [{ id: "r1", title: "Some Album", "release-group": { id: "g1" } }] } },
+                { body: { images: [image(["Front"], "f"), image(["Booklet"], "b1")] } },
+                { body: { releases: [{ id: "r1" }, { id: "r2" }] } },
+                { status: 503 } // r2 cannot be checked
+            ]);
+
+            const result = await sleeve.getSleeveArt("Some Artist", "Some Album");
+
+            expect(result.status).toBe("ok");
+            expect(result.images.map((i) => i.type)).toEqual(["Booklet"]);
+            expect(sleeveCache.set).not.toHaveBeenCalled();
+        }, 30000);
+    });
+
+    describe("getSleeveArt and earlier misses", () => {
+        test("looks again at a miss recorded before failures were told apart", async () => {
+            sleeveCache.get.mockResolvedValue({
+                status: "not-found", format: 2, key: "alice-in-chains_unplugged", images: []
+            });
+            queueResponses([{ body: { releases: [] } }]);
+
+            await sleeve.getSleeveArt("Alice In Chains", "Unplugged");
+
+            expect(https.get).toHaveBeenCalled();
+            // The new answer is recorded as trustworthy, so it is not redone.
+            expect(sleeveCache.set).toHaveBeenCalledWith(
+                "alice-in-chains_unplugged",
+                expect.objectContaining({ status: "not-found", missVersion: 2 })
+            );
+        }, 20000);
+
+        test("trusts a miss recorded since", async () => {
+            sleeveCache.get.mockResolvedValue({
+                status: "not-found", format: 2, missVersion: 2, key: "nobody_nothing", images: []
+            });
+
+            const result = await sleeve.getSleeveArt("Nobody", "Nothing");
+
+            expect(result.status).toBe("not-found");
+            expect(https.get).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("getSleeveArt with several screens", () => {
+        test("screens asking about the same album at once share one lookup", async () => {
+            queueResponses([
+                { body: { releases: [{ id: "r1", title: "Kid A" }] } },
+                { body: { images: [image(["Back"], "b"), image(["Booklet"], "b1"), image(["Booklet"], "b2"), image(["Booklet"], "b3")] } }
+            ]);
+
+            const [first, second] = await Promise.all([
+                sleeve.getSleeveArt("Radiohead", "Kid A"),
+                sleeve.getSleeveArt("Radiohead", "Kid A")
+            ]);
+
+            expect(https.get).toHaveBeenCalledTimes(2); // one search, one archive request
+            expect(second).toBe(first);
         }, 20000);
     });
 });
