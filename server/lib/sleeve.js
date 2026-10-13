@@ -58,11 +58,14 @@ const MAX_PER_TYPE_DEFAULT = 1;
 // valid and only the misses are worth discarding.
 const CACHE_FORMAT = 2;
 
-// Bump when a fix means earlier misses can no longer be trusted. Misses
-// recorded before version 2 could not tell "nothing scanned" from "the
-// request failed", so plenty of albums with full packages were cached as
-// having none. Those are looked up again the next time they play.
-const MISS_VERSION = 2;
+// Bump when a fix means earlier misses can no longer be trusted; those are
+// looked up again the next time they play.
+//   2 - misses before this could not tell "nothing scanned" from "the
+//       request failed", so albums with full packages were cached as empty.
+//   3 - misses before this never tried finding the album through the track
+//       playing, so albums credited to someone other than the track's artist
+//       (a Wham! album reported under George Michael) were never found.
+const MISS_VERSION = 3;
 
 // The printed parts of the package, in the order they are worth looking at.
 // An allow-list rather than a list of things to drop: the archive has types
@@ -455,6 +458,76 @@ const buildQueries = (artist, album) => {
 };
 
 /**
+ * Reduce a title to its words, for comparing titles that are punctuated or
+ * capitalised differently.
+ * @param {string} s
+ * @returns {string}
+ */
+const titleWords = (s) => String(s || "")
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u201c\u201d']/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+/**
+ * Whether a release is the album the device reported.
+ * The same title, or the same title with a subtitle added - "The Final" is
+ * catalogued as "The Final: 14 Greatest Hits". The release group is checked
+ * too, since it carries the plain album name when a pressing does not.
+ * @param {object} release
+ * @param {string} album
+ * @returns {boolean}
+ */
+const isAlbum = (release, album) => {
+    const want = titleWords(stripEdition(album));
+    if (!want) {
+        return false;
+    }
+    const group = release["release-group"] || {};
+    return [release.title, group.title].some((t) => {
+        const have = titleWords(t);
+        return have === want || have.startsWith(want + " ");
+    });
+};
+
+/**
+ * Find the album through the track that is playing on it.
+ * For when the track's artist is not the album's: the device reports
+ * "Careless Whisper" by George Michael on "The Final", which is a Wham!
+ * album, so a search on artist and album finds nothing. Asking which releases
+ * of that name carry this song does not depend on who the album is credited
+ * to - and needing both the song and the album to match keeps a generic
+ * title from landing on someone else's record.
+ * @param {string} title
+ * @param {string} album
+ * @returns {Promise<Array<object>|null>} The matching releases, closest
+ *     titles first (possibly none), or null if the search failed.
+ */
+const releasesForTrack = async (title, album) => {
+    const query = `recording:"${escapeQuery(stripEdition(title))}" AND release:"${escapeQuery(stripEdition(album))}"`;
+    const search = await musicBrainz(
+        "recording/?query=" + encodeURIComponent(query) + "&fmt=json&limit=10"
+    );
+    if (!search) {
+        return null;
+    }
+
+    const want = titleWords(stripEdition(album));
+    const found = [];
+    (Array.isArray(search.recordings) ? search.recordings : []).forEach((recording) => {
+        (Array.isArray(recording.releases) ? recording.releases : []).forEach((release) => {
+            if (release.id && isAlbum(release, album) && !found.some((r) => r.id === release.id)) {
+                found.push(release);
+            }
+        });
+    });
+
+    // Pressings titled exactly as reported before the ones with a subtitle.
+    const exact = (r) => (titleWords(r.title) === want ? 0 : 1);
+    return found.sort((a, b) => exact(a) - exact(b));
+};
+
+/**
  * Find scans of the physical package for an album.
  *
  * Looks at the closest title matches first, then at other pressings in the
@@ -470,10 +543,11 @@ const buildQueries = (artist, album) => {
  *
  * @param {string} artist
  * @param {string} album
+ * @param {string} title - The track playing, if known.
  * @param {string} key - Cache key for this album.
  * @returns {Promise<object>} Always resolves; status says what was found.
  */
-const lookUp = async (artist, album, key) => {
+const lookUp = async (artist, album, title, key) => {
     const cached = await sleeveCache.get(key);
     if (cached && cached.format === CACHE_FORMAT
         && (cached.status !== "not-found" || cached.missVersion === MISS_VERSION)) {
@@ -485,7 +559,13 @@ const lookUp = async (artist, album, key) => {
     const failures = [];
     const seen = [];
     let best = null;
-    const miss = () => ({ status: "not-found", format: CACHE_FORMAT, missVersion: MISS_VERSION, key: key, images: [] });
+    // A miss is only final if every way of finding the album was tried. When
+    // nothing matched the artist and there was no track title to search by,
+    // it is cached without the current version so the next screen that can
+    // say what is playing looks again.
+    const miss = (final) => ({
+        status: "not-found", format: CACHE_FORMAT, missVersion: final ? MISS_VERSION : undefined, key: key, images: []
+    });
 
     /**
      * Give up on an incomplete lookup without caching it.
@@ -525,8 +605,20 @@ const lookUp = async (artist, album, key) => {
         }
     }
 
+    // Nothing under this artist: the album may be credited to someone else,
+    // so look for it through the track instead.
+    if (!releases.length && title) {
+        const byTrack = await releasesForTrack(title, album);
+        if (byTrack === null) {
+            failures.push("no answer from MusicBrainz");
+            return incomplete("searching by track");
+        }
+        releases = byTrack;
+        log("Track search found", releases.length, "releases for", key, "via", title);
+    }
+
     if (!releases.length) {
-        const none = miss();
+        const none = miss(Boolean(title));
         await sleeveCache.set(key, none);
         return none;
     }
@@ -629,7 +721,7 @@ const lookUp = async (artist, album, key) => {
     }
 
     // Every question was answered, and none of the answers had anything.
-    const none = miss();
+    const none = miss(true);
     await sleeveCache.set(key, none);
     return none;
 };
@@ -644,9 +736,11 @@ const inFlight = new Map();
  * under way for the same one.
  * @param {string} artist
  * @param {string} album
+ * @param {string} [title] - The track playing; finds the album when it is
+ *     credited to someone other than the track's artist.
  * @returns {Promise<object>} Always resolves; status says what was found.
  */
-const getSleeveArt = async (artist, album) => {
+const getSleeveArt = async (artist, album, title = "") => {
     if (!artist || !album) {
         return { status: "no-metadata", images: [] };
     }
@@ -656,7 +750,7 @@ const getSleeveArt = async (artist, album) => {
         return inFlight.get(key);
     }
 
-    const pending = lookUp(artist, album, key).finally(() => {
+    const pending = lookUp(artist, album, title, key).finally(() => {
         inFlight.delete(key);
     });
     inFlight.set(key, pending);

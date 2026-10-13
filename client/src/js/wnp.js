@@ -663,7 +663,8 @@ WNP.setSocketDefinitions = function () {
                 WNP.d.sleeveKey = null;
                 WNP.clearSleeve();
             } else {
-                WNP.requestSleeve(WNP.r.mediaArtist.innerText, WNP.r.mediaAlbum.innerText);
+                WNP.requestSleeve(WNP.r.mediaArtist.innerText, WNP.r.mediaAlbum.innerText,
+                    (msg.trackMetaData && msg.trackMetaData["dc:title"]) ? msg.trackMetaData["dc:title"] : "");
             }
         }
 
@@ -1308,9 +1309,12 @@ WNP.sleeveKeyFor = function (artist, album) {
  * requests, and consecutive tracks from one record are the common case.
  * @param {string} artist
  * @param {string} album
+ * @param {string} title - The track playing. Lets the server find the album
+ *     when the track's artist is not the album's - a Wham! album reported
+ *     under George Michael, a soundtrack under one of its performers.
  * @returns {undefined}
  */
-WNP.requestSleeve = function (artist, album) {
+WNP.requestSleeve = function (artist, album, title) {
     if (!artist || !album) {
         WNP.d.sleeveKey = null;
         WNP.clearSleeve();
@@ -1325,9 +1329,10 @@ WNP.requestSleeve = function (artist, album) {
     WNP.d.sleeveKey = key;
     WNP.d.sleeveArtist = artist;
     WNP.d.sleeveAlbum = album;
+    WNP.d.sleeveTitle = title || "";
     WNP.d.sleeveRetries = 0;
     WNP.clearSleeve();
-    socket.emit("sleeve-get", { artist: artist, album: album });
+    socket.emit("sleeve-get", { artist: artist, album: album, title: WNP.d.sleeveTitle });
 };
 
 /**
@@ -1355,7 +1360,7 @@ WNP.retrySleeve = function () {
         if (WNP.d.sleeveKey !== key) {
             return;
         }
-        socket.emit("sleeve-get", { artist: WNP.d.sleeveArtist, album: WNP.d.sleeveAlbum });
+        socket.emit("sleeve-get", { artist: WNP.d.sleeveArtist, album: WNP.d.sleeveAlbum, title: WNP.d.sleeveTitle });
     }, delay);
 };
 

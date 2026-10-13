@@ -471,13 +471,15 @@ io.on("connection", (socket) => {
      * Looks up scans of the physical package - back cover, disc, booklet - for
      * an album. Client driven rather than pushed on every track, because only
      * Sleeve mode wants it and a lookup costs rate-limited external requests.
-     * @param {object} msg - Expected to carry artist and album.
+     * @param {object} msg - Expected to carry artist and album, and the track
+     *     title, which finds the album when the track's artist is not its own.
      * @returns {undefined}
      */
     socket.on("sleeve-get", async (msg) => {
         log("Socket event", "sleeve-get", msg && msg.artist, "-", msg && msg.album);
         const artist = (msg && msg.artist) ? String(msg.artist) : "";
         const album = (msg && msg.album) ? String(msg.album) : "";
+        const title = (msg && msg.title) ? String(msg.title) : "";
 
         if (!artist || !album) {
             socket.emit("sleeve-get", { status: "no-metadata", images: [] });
@@ -485,7 +487,7 @@ io.on("connection", (socket) => {
         }
 
         try {
-            const result = await sleeve.getSleeveArt(artist, album);
+            const result = await sleeve.getSleeveArt(artist, album, title);
             // The album may well have changed while we were waiting on the
             // network, so the reply carries the key it answers for and the
             // client decides whether it is still relevant.

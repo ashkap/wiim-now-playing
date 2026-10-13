@@ -383,21 +383,32 @@ describe("Sleeve Module", () => {
             sleeveCache.get.mockResolvedValue({
                 status: "not-found", format: 2, key: "alice-in-chains_unplugged", images: []
             });
-            queueResponses([{ body: { releases: [] } }]);
+            queueResponses([{ body: { releases: [] } }, { body: { recordings: [] } }]);
 
-            await sleeve.getSleeveArt("Alice In Chains", "Unplugged");
+            await sleeve.getSleeveArt("Alice In Chains", "Unplugged", "No Excuses");
 
             expect(https.get).toHaveBeenCalled();
             // The new answer is recorded as trustworthy, so it is not redone.
             expect(sleeveCache.set).toHaveBeenCalledWith(
                 "alice-in-chains_unplugged",
-                expect.objectContaining({ status: "not-found", missVersion: 2 })
+                expect.objectContaining({ status: "not-found", missVersion: 3 })
             );
+        }, 20000);
+
+        test("looks again at a miss recorded before the track search existed", async () => {
+            sleeveCache.get.mockResolvedValue({
+                status: "not-found", format: 2, missVersion: 2, key: "george-michael_the-final", images: []
+            });
+            queueResponses([{ body: { releases: [] } }, { body: { recordings: [] } }]);
+
+            await sleeve.getSleeveArt("George Michael", "The Final", "Careless Whisper");
+
+            expect(https.get).toHaveBeenCalled();
         }, 20000);
 
         test("trusts a miss recorded since", async () => {
             sleeveCache.get.mockResolvedValue({
-                status: "not-found", format: 2, missVersion: 2, key: "nobody_nothing", images: []
+                status: "not-found", format: 2, missVersion: 3, key: "nobody_nothing", images: []
             });
 
             const result = await sleeve.getSleeveArt("Nobody", "Nothing");
@@ -422,5 +433,99 @@ describe("Sleeve Module", () => {
             expect(https.get).toHaveBeenCalledTimes(2); // one search, one archive request
             expect(second).toBe(first);
         }, 20000);
+    });
+
+    describe("getSleeveArt for an album credited to someone else", () => {
+        // The device reports the track's artist. When that is not who the album
+        // is credited to - "Careless Whisper" by George Michael, on Wham!'s
+        // The Final - a search on artist and album finds nothing at all.
+
+        const finalPressing = {
+            id: "r1",
+            title: "The Final: 14 Greatest Hits",
+            "release-group": { id: "g1", title: "The Final" }
+        };
+
+        test("finds it through the track that is playing", async () => {
+            queueResponses([
+                { body: { releases: [] } }, // nothing by George Michael called The Final
+                { body: { recordings: [{ releases: [
+                    { id: "r2", title: "Make It Big", "release-group": { id: "g2", title: "Make It Big" } },
+                    finalPressing
+                ] }] } },
+                { body: { images: [image(["Back"], "b"), image(["Booklet"], "b1"), image(["Booklet"], "b2"), image(["Booklet"], "b3")] } }
+            ]);
+
+            const result = await sleeve.getSleeveArt("George Michael", "The Final", "Careless Whisper");
+
+            expect(result.status).toBe("ok");
+            expect(result.hasBack).toBe(true);
+            expect(result.release.id).toBe("r1"); // not Make It Big, which also has the song
+            expect(result.key).toBe("george-michael_the-final");
+
+            const trackSearch = decodeURIComponent(https.get.mock.calls[1][0]);
+            expect(trackSearch).toContain("recording/?query=");
+            expect(trackSearch).toContain('recording:"Careless Whisper"');
+            expect(trackSearch).toContain('release:"The Final"');
+        }, 20000);
+
+        test("does not settle for another album that has the song", async () => {
+            // A generic title must not land on someone else's record, and nor
+            // must a compilation that merely carries the track.
+            queueResponses([
+                { body: { releases: [] } },
+                { body: { recordings: [{ releases: [
+                    { id: "r2", title: "Make It Big", "release-group": { id: "g2", title: "Make It Big" } },
+                    { id: "r3", title: "The Finale", "release-group": { id: "g3", title: "The Finale" } }
+                ] }] } }
+            ]);
+
+            const result = await sleeve.getSleeveArt("George Michael", "The Final", "Careless Whisper");
+
+            expect(result.status).toBe("not-found");
+            expect(https.get).toHaveBeenCalledTimes(2); // no archive requests for the wrong albums
+            expect(sleeveCache.set).toHaveBeenCalledWith(
+                "george-michael_the-final",
+                expect.objectContaining({ status: "not-found", missVersion: 3 })
+            );
+        }, 20000);
+
+        test("an album found under its own artist does not need the track", async () => {
+            queueResponses([
+                { body: { releases: [finalPressing] } },
+                { body: { images: [image(["Back"], "b"), image(["Booklet"], "b1"), image(["Booklet"], "b2"), image(["Booklet"], "b3")] } }
+            ]);
+
+            const result = await sleeve.getSleeveArt("Wham!", "The Final", "Careless Whisper");
+
+            expect(result.status).toBe("ok");
+            expect(https.get).toHaveBeenCalledTimes(2); // no track search
+        }, 20000);
+
+        test("without a track title, a miss is not taken as final", async () => {
+            // The next screen that can say what is playing should look again.
+            queueResponses([{ body: { releases: [] } }]);
+
+            const result = await sleeve.getSleeveArt("George Michael", "The Final");
+
+            expect(result.status).toBe("not-found");
+            expect(https.get).toHaveBeenCalledTimes(1);
+            expect(sleeveCache.set).toHaveBeenCalledWith(
+                "george-michael_the-final",
+                expect.objectContaining({ status: "not-found", missVersion: undefined })
+            );
+        });
+
+        test("a failed track search is an error, not a miss", async () => {
+            queueResponses([
+                { body: { releases: [] } },
+                { status: 503 } // the track search, and every retry of it
+            ]);
+
+            const result = await sleeve.getSleeveArt("George Michael", "The Final", "Careless Whisper");
+
+            expect(result.status).toBe("error");
+            expect(sleeveCache.set).not.toHaveBeenCalled();
+        }, 45000);
     });
 });
