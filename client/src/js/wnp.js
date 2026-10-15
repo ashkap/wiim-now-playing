@@ -1245,6 +1245,15 @@ WNP.syncBackdrop = function () {
     var src = WNP.r.albumArt.currentSrc || WNP.r.albumArt.src;
     if (!src) { return; }
 
+    // A source photo (Line In, Optical) is shown full-screen and crisp on this
+    // same layer, so it must not go through the canvas blur below - the CSS
+    // that removes the blur for it cannot undo one baked into the image.
+    var appEl = document.getElementById("wnpApp");
+    if (appEl && appEl.classList.contains("is-sourcephoto")) {
+        WNP.r.bgAlbumArtBlur.style.backgroundImage = "url('" + src + "')";
+        return;
+    }
+
     // Blur the artwork into a small canvas and use that as the backdrop, rather
     // than asking CSS to blur a full-screen layer. The Pi 3B cannot paint a
     // large-radius CSS blur over a layer that size - the filtered layer is

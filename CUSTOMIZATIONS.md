@@ -9,7 +9,7 @@ All of the work lives on the [`custom-layout`](https://github.com/ashkap/wiim-no
 - **Kiosk reliability fixes:** album art that stops failing after a few hours, a playback-aware screen sleep, and a WiFi watchdog
 - **A "Reload all screens" action**, to push client changes to the kiosk from a phone
 
-> The screenshots below were captured at 1920×1080 in a desktop browser, with sample tracks fed to the display.
+> The screenshots in this page were captured at 1920×1080 in a desktop browser, with sample tracks fed to the display.
 
 ---
 
@@ -96,6 +96,9 @@ Analogue and optical inputs carry no title, artist or artwork. Upstream falls ba
 | --- | --- |
 | Line In | Technics SL-1200 turntable (`client/src/img/linein-turntable.jpg`) |
 | Optical | Marantz CD-7 CD player (`client/src/img/optical-cdplayer.jpg`) |
+
+![Line In](docs/custom/line-in.jpg)
+*TV mode on the Line In input*
 
 Adding another input is one line in `WNP.s.sourcePhotos` (`client/src/js/wnp.js`), keyed by the device's `PlayMedium`. Image credits are in [`client/src/img/CREDITS.md`](client/src/img/CREDITS.md).
 
