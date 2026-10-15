@@ -1,5 +1,7 @@
 # WiiM Now Playing
 
+> **This is the `custom-layout` fork.** It adds Art mode, Sleeve mode, Line In/Optical source photos and kiosk reliability fixes. See **[CUSTOMIZATIONS.md](CUSTOMIZATIONS.md)** for everything that's changed, with screenshots.
+
 <!-- Badges -->
 [![Documentation](https://img.shields.io/badge/pages-Documentation-blue?logo=github)](https://cvdlinden.github.io/wiim-now-playing/)
 ![Version](https://img.shields.io/github/package-json/v/cvdlinden/wiim-now-playing)
